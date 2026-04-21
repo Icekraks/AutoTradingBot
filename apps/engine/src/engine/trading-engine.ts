@@ -1,5 +1,5 @@
 import type { Asset, Candle, Order, Portfolio, RegimeState, MarketRegime } from "@trading-bot/shared";
-import { OrderSide, OrderStatus } from "@trading-bot/shared";
+import { OrderSide, OrderStatus, OrderType } from "@trading-bot/shared";
 import type { IBroker } from "../brokers/broker.interface.js";
 import { RegimeDetector } from "../hmm/regime.js";
 import { generateSignal } from "../signals/signal-generator.js";
@@ -29,6 +29,7 @@ export class TradingEngine {
   private slowCandleBuffers: Map<Asset, Candle[]> = new Map();
   private recentTrades: Order[] = [];
   private paperTracker: PaperTracker = new PaperTracker(0);
+  private tickUnsubscribers: Map<Asset, () => void> = new Map();
 
   private portfolio: Portfolio = {
     totalValueAUD: 0,
@@ -82,6 +83,7 @@ export class TradingEngine {
     this.paperTracker.reset(paperBalance);
 
     await this.initialise();
+    await this.subscribeAllTicks();
 
     // Align to next 30-min boundary, then run every 30 min
     const msUntilNextCandle = this.msUntilNextCandle();
@@ -97,6 +99,8 @@ export class TradingEngine {
 
   async stop(): Promise<void> {
     if (this.intervalHandle) clearInterval(this.intervalHandle);
+    for (const unsub of this.tickUnsubscribers.values()) unsub();
+    this.tickUnsubscribers.clear();
     await this.broker.disconnect();
   }
 
@@ -139,29 +143,13 @@ export class TradingEngine {
     }
     this.paperTracker.updatePrices(prices);
 
-    // Auto-close paper positions that hit stop loss or take profit
-    for (const asset of this.paperTracker.checkStopLossTakeProfit(prices)) {
-      const price = prices[asset];
-      const paperPortfolio = this.paperTracker.getPortfolio();
-      const pos = paperPortfolio.positions.find((p) => p.asset === asset);
-      if (!pos) continue;
-      const fakeOrder: Order = {
-        id: crypto.randomUUID(),
-        asset,
-        pair: `${asset}/${this.quoteAsset}` as `${string}/${string}`,
-        side: OrderSide.Sell,
-        type: "market" as Order["type"],
-        quantity: pos.quantity,
-        price,
-        status: OrderStatus.Filled,
-        paperId: `PAPER-SL-${asset}`,
-        createdAt: Date.now(),
-        filledAt: Date.now(),
-      };
-      this.paperTracker.onOrderFilled(fakeOrder, price);
-      this.recentTrades.unshift(fakeOrder);
-      this.emit({ type: "order", order: fakeOrder });
-      console.log(`[Engine][PAPER] ${asset} stop-loss/take-profit triggered @ ${price}`);
+    // Candle-based stop-loss/take-profit: fill at the level price, not the close
+    for (const asset of this.assets) {
+      const buffer = this.candleBuffers.get(asset) ?? [];
+      if (buffer.length === 0) continue;
+      const latest = buffer[buffer.length - 1];
+      const fillPrice = this.paperTracker.checkCandleTrigger(asset, latest.low, latest.high);
+      if (fillPrice !== null) this.triggerPaperExit(asset, fillPrice);
     }
 
     this.emitPortfolio();
@@ -242,6 +230,44 @@ export class TradingEngine {
       paper: this.paperMode ? this.paperTracker.getPortfolio() : undefined,
     };
     this.emit({ type: "portfolio", portfolio: portfolioWithPaper });
+  }
+
+  private triggerPaperExit(asset: Asset, fillPrice: number): void {
+    const pos = this.paperTracker.getPortfolio().positions.find((p) => p.asset === asset);
+    if (!pos) return;
+    const order: Order = {
+      id: crypto.randomUUID(),
+      asset,
+      pair: `${asset}/${this.quoteAsset}` as `${string}/${string}`,
+      side: OrderSide.Sell,
+      type: OrderType.Market,
+      quantity: pos.quantity,
+      price: fillPrice,
+      status: OrderStatus.Filled,
+      paperId: `PAPER-SL-${asset}`,
+      createdAt: Date.now(),
+      filledAt: Date.now(),
+    };
+    this.paperTracker.onOrderFilled(order, fillPrice);
+    this.recentTrades.unshift(order);
+    if (this.recentTrades.length > 50) this.recentTrades.pop();
+    this.emit({ type: "order", order });
+    this.emitPortfolio();
+    console.log(`[Engine][PAPER] ${asset} stop-loss/take-profit triggered @ ${fillPrice}`);
+  }
+
+  private async subscribeAllTicks(): Promise<void> {
+    for (const asset of this.assets) {
+      const unsub = await this.broker.subscribeTicks(asset, this.quoteAsset, (price) => {
+        if (!this.paperMode) return;
+        const fillPrice = this.paperTracker.checkPriceTrigger(asset, price);
+        if (fillPrice !== null) {
+          this.triggerPaperExit(asset, fillPrice);
+        }
+      });
+      this.tickUnsubscribers.set(asset, unsub);
+    }
+    console.log(`[Engine] Subscribed to live ticks for ${this.assets.join(", ")}`);
   }
 
   private updatePeak(): void {

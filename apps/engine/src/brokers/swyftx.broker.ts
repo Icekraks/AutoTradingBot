@@ -209,6 +209,8 @@ const KRAKEN_PAIR: Record<string, string> = {
   "BTC/USD": "XBTUSD",
   "ETH/USD": "ETHUSD",
   "XRP/USD": "XRPUSD",
+  "SOL/USD": "SOLUSD",
+  "ADA/USD": "ADAUSD",
 };
 
 // Each row: [time, open, high, low, close, vwap, volume, count]

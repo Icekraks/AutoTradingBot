@@ -21,7 +21,10 @@ export function Header({
 }: HeaderProps) {
   const [pendingMode, setPendingMode] = useState<boolean | null>(null);
   const paper = portfolio.paper;
-  const paperPnl = paper ? paper.totalValueAUD - paper.startingAUD : 0;
+  const paperPnl = paper
+    ? Math.round(paper.totalValueAUD * 100) / 100 -
+      Math.round(paper.startingAUD * 100) / 100
+    : 0;
   const paperPnlPct =
     paper && paper.startingAUD > 0 ? (paperPnl / paper.startingAUD) * 100 : 0;
   const paperPositive = paperPnl >= 0;

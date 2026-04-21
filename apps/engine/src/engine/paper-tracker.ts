@@ -66,16 +66,21 @@ export class PaperTracker {
     }
   }
 
-  checkStopLossTakeProfit(prices: Record<Asset, number>): Asset[] {
-    const triggered: Asset[] = [];
-    for (const [asset, pos] of this.positions) {
-      const price = prices[asset];
-      if (price == null) continue;
-      if (price <= pos.stopLoss || price >= pos.takeProfit) {
-        triggered.push(asset);
-      }
-    }
-    return triggered;
+  // Tick-based: fill at the live price that crossed the level
+  checkPriceTrigger(asset: Asset, price: number): number | null {
+    const pos = this.positions.get(asset);
+    if (!pos) return null;
+    if (price <= pos.stopLoss || price >= pos.takeProfit) return price;
+    return null;
+  }
+
+  // Candle-based: fill at the stop/TP level (not the close) for realistic simulation
+  checkCandleTrigger(asset: Asset, candleLow: number, candleHigh: number): number | null {
+    const pos = this.positions.get(asset);
+    if (!pos) return null;
+    if (candleLow <= pos.stopLoss) return pos.stopLoss;
+    if (candleHigh >= pos.takeProfit) return pos.takeProfit;
+    return null;
   }
 
   getPortfolio(): PaperPortfolio {
