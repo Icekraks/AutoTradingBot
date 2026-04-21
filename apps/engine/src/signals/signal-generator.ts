@@ -40,26 +40,33 @@ export interface SignalContext {
   quoteAsset: string;
   candles: Candle[];
   regime: RegimeState;
+  slowRegime: RegimeState;
 }
 
 export function generateSignal(ctx: SignalContext): TradeSignal {
-  const { asset, quoteAsset, candles, regime } = ctx;
+  const { asset, quoteAsset, candles, regime, slowRegime } = ctx;
   const pair: TradingPair = `${asset}/${quoteAsset}`;
   const latestClose = candles[candles.length - 1].close;
   const closes = candles.map((c) => c.close);
   const rsi = calculateRSI(closes);
 
   let type = SignalType.Hold;
-  let reason = `Regime: ${regime.regime}, RSI: ${rsi.toFixed(1)}`;
+  let reason = `Fast: ${regime.regime}, Slow: ${slowRegime.regime}, RSI: ${rsi.toFixed(1)}`;
 
-  if (regime.regime === MarketRegime.Bull && rsi < RSI_OVERBOUGHT && regime.confidence > 0.6) {
-    type = SignalType.Buy;
-    reason = `Bull regime (${(regime.confidence * 100).toFixed(0)}% confidence), RSI ${rsi.toFixed(1)} not overbought`;
-  } else if (regime.regime === MarketRegime.Bear && rsi > RSI_OVERSOLD && regime.confidence > 0.6) {
+  // Entry: fast 15min drives timing; slow 1h must not be actively Bear (opposing)
+  // Exit: slow 1h turning Bear is the primary exit — wait for the major trend to confirm reversal
+  const slowActiveBear = slowRegime.regime === MarketRegime.Bear && slowRegime.confidence > 0.6;
+  const slowActiveBull = slowRegime.regime === MarketRegime.Bull && slowRegime.confidence > 0.6;
+
+  if (slowActiveBear) {
     type = SignalType.Sell;
-    reason = `Bear regime (${(regime.confidence * 100).toFixed(0)}% confidence), RSI ${rsi.toFixed(1)} not oversold`;
-  } else if (regime.confidence < 0.6) {
-    reason = `Low regime confidence (${(regime.confidence * 100).toFixed(0)}%) — holding`;
+    reason = `1h Bear (${(slowRegime.confidence * 100).toFixed(0)}%) — major trend exit, RSI ${rsi.toFixed(1)}`;
+  } else if (regime.regime === MarketRegime.Bull && rsi < RSI_OVERBOUGHT && regime.confidence > 0.6 && !slowActiveBear) {
+    type = SignalType.Buy;
+    reason = `15m Bull (${(regime.confidence * 100).toFixed(0)}%), 1h=${slowRegime.regime}, RSI ${rsi.toFixed(1)}`;
+  } else if (regime.regime === MarketRegime.Bear && rsi > RSI_OVERSOLD && regime.confidence > 0.6 && !slowActiveBull) {
+    type = SignalType.Sell;
+    reason = `15m Bear (${(regime.confidence * 100).toFixed(0)}%), 1h=${slowRegime.regime}, RSI ${rsi.toFixed(1)}`;
   }
 
   return {

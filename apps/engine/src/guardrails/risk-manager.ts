@@ -74,11 +74,11 @@ export class RiskManager {
     }
 
     // ── Guardrail 4: minimum holding period ──────────────────────────────
-    const minHoldMs = config.risk.minHoldCandles * config.hmm.candleResolutionMinutes * 60 * 1000;
+    const minHoldMs = config.risk.minHoldCandles * config.hmm.slowCandleResolutionMinutes * 60 * 1000;
     const openPosition = alreadyLong ?? alreadyShort;
     if (signal.type === SignalType.Sell && openPosition && Date.now() - openPosition.openedAt < minHoldMs) {
       const heldMins = Math.round((Date.now() - openPosition.openedAt) / 60_000);
-      const minMins = config.risk.minHoldCandles * config.hmm.candleResolutionMinutes;
+      const minMins = config.risk.minHoldCandles * config.hmm.slowCandleResolutionMinutes;
       return { approved: false, reason: `Min hold period not met for ${signal.asset} (${heldMins}m < ${minMins}m)` };
     }
 

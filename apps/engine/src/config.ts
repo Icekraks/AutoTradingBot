@@ -40,10 +40,12 @@ export const config = {
   },
 
   hmm: {
-    candleResolutionMinutes: Number(getEnv("HMM_CANDLE_RESOLUTION", "30")),
+    candleResolutionMinutes: Number(getEnv("HMM_CANDLE_RESOLUTION", "15")),
     lookbackCandles: Number(getEnv("HMM_LOOKBACK_CANDLES", "500")),
+    slowCandleResolutionMinutes: Number(getEnv("HMM_SLOW_CANDLE_RESOLUTION", "60")),
+    slowLookbackCandles: Number(getEnv("HMM_SLOW_LOOKBACK_CANDLES", "500")),
     numStates: Number(getEnv("HMM_NUM_STATES", "3")),
-    retrainIntervalHours: Number(getEnv("HMM_RETRAIN_INTERVAL_HOURS", "24")),
+    retrainIntervalHours: Number(getEnv("HMM_RETRAIN_INTERVAL_HOURS", "6")),
   },
 
   risk: {

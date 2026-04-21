@@ -24,7 +24,9 @@ export class TradingEngine {
   private paperMode: boolean;
 
   private detectors: Map<Asset, RegimeDetector> = new Map();
+  private slowDetectors: Map<Asset, RegimeDetector> = new Map();
   private candleBuffers: Map<Asset, Candle[]> = new Map();
+  private slowCandleBuffers: Map<Asset, Candle[]> = new Map();
   private recentTrades: Order[] = [];
   private paperTracker: PaperTracker = new PaperTracker(0);
 
@@ -50,7 +52,9 @@ export class TradingEngine {
 
     for (const asset of this.assets) {
       this.detectors.set(asset, new RegimeDetector(asset));
+      this.slowDetectors.set(asset, new RegimeDetector(asset));
       this.candleBuffers.set(asset, []);
+      this.slowCandleBuffers.set(asset, []);
     }
 
     this.riskManager = new RiskManager(
@@ -104,19 +108,18 @@ export class TradingEngine {
 
   private async initialise(): Promise<void> {
     for (const asset of this.assets) {
-      const candles = await this.broker.getCandles(
-        asset,
-        this.quoteAsset,
-        config.hmm.candleResolutionMinutes,
-        config.hmm.lookbackCandles
-      );
+      const [candles, slowCandles] = await Promise.all([
+        this.broker.getCandles(asset, this.quoteAsset, config.hmm.candleResolutionMinutes, config.hmm.lookbackCandles),
+        this.broker.getCandles(asset, this.quoteAsset, config.hmm.slowCandleResolutionMinutes, config.hmm.slowLookbackCandles),
+      ]);
 
       this.candleBuffers.set(asset, candles);
+      this.slowCandleBuffers.set(asset, slowCandles);
 
-      const detector = this.detectors.get(asset)!;
-      detector.train(candles);
+      this.detectors.get(asset)!.train(candles);
+      this.slowDetectors.get(asset)!.train(slowCandles);
 
-      console.log(`[Engine] Initialised ${asset} with ${candles.length} candles`);
+      console.log(`[Engine] Initialised ${asset} — fast: ${candles.length} candles, slow: ${slowCandles.length} candles`);
     }
 
     this.emitPortfolio();
@@ -176,28 +179,29 @@ export class TradingEngine {
         : Infinity;
 
       if (hoursSinceTrain >= config.hmm.retrainIntervalHours) {
-        const candles = this.candleBuffers.get(asset)!;
-        detector.train(candles);
+        detector.train(this.candleBuffers.get(asset)!);
+        this.slowDetectors.get(asset)!.train(this.slowCandleBuffers.get(asset)!);
       }
     }
   }
 
   private async processAsset(asset: Asset): Promise<void> {
-    const candles = await this.broker.getCandles(
-      asset,
-      this.quoteAsset,
-      config.hmm.candleResolutionMinutes,
-      config.hmm.lookbackCandles
-    );
+    const [candles, slowCandles] = await Promise.all([
+      this.broker.getCandles(asset, this.quoteAsset, config.hmm.candleResolutionMinutes, config.hmm.lookbackCandles),
+      this.broker.getCandles(asset, this.quoteAsset, config.hmm.slowCandleResolutionMinutes, config.hmm.slowLookbackCandles),
+    ]);
 
     this.candleBuffers.set(asset, candles);
+    this.slowCandleBuffers.set(asset, slowCandles);
     const latest = candles[candles.length - 1];
     this.emit({ type: "candle", asset, candle: latest });
 
     const detector = this.detectors.get(asset)!;
-    if (!detector.isTrained) return;
+    const slowDetector = this.slowDetectors.get(asset)!;
+    if (!detector.isTrained || !slowDetector.isTrained) return;
 
     const regime = detector.currentRegime(candles);
+    const slowRegime = slowDetector.currentRegime(slowCandles);
     this.emit({ type: "regime", asset, regime });
 
     const signal = generateSignal({
@@ -205,6 +209,7 @@ export class TradingEngine {
       quoteAsset: this.quoteAsset,
       candles,
       regime,
+      slowRegime,
     });
 
     console.log(`[Engine] ${asset} signal=${signal.type} regime=${regime.regime} rsi=${signal.rsi.toFixed(1)}`);

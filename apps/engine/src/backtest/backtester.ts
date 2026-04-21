@@ -85,6 +85,7 @@ export class Backtester {
         quoteAsset: "AUD",
         candles: slidingWindow,
         regime: regimeState,
+        slowRegime: regimeState,
       });
 
       // Check stop loss / take profit on open position
