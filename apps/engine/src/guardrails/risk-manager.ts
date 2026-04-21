@@ -58,24 +58,20 @@ export class RiskManager {
       return { approved: false, reason: this.haltReason! };
     }
 
-    // ── Guardrail 3: no duplicate positions ──────────────────────────────
+    // ── Guardrail 3: long-only — no duplicate longs, no sells without a position ─
     const alreadyLong = positions.find(
       (p) => p.asset === signal.asset && p.side === OrderSide.Buy
     );
     if (signal.type === SignalType.Buy && alreadyLong) {
       return { approved: false, reason: `Already holding ${signal.asset} long position` };
     }
-
-    const alreadyShort = positions.find(
-      (p) => p.asset === signal.asset && p.side === OrderSide.Sell
-    );
-    if (signal.type === SignalType.Sell && alreadyShort) {
-      return { approved: false, reason: `Already have short exposure on ${signal.asset}` };
+    if (signal.type === SignalType.Sell && !alreadyLong) {
+      return { approved: false, reason: `No ${signal.asset} long position to exit` };
     }
 
     // ── Guardrail 4: minimum holding period ──────────────────────────────
     const minHoldMs = config.risk.minHoldCandles * config.hmm.slowCandleResolutionMinutes * 60 * 1000;
-    const openPosition = alreadyLong ?? alreadyShort;
+    const openPosition = alreadyLong;
     if (signal.type === SignalType.Sell && openPosition && Date.now() - openPosition.openedAt < minHoldMs) {
       const heldMins = Math.round((Date.now() - openPosition.openedAt) / 60_000);
       const minMins = config.risk.minHoldCandles * config.hmm.slowCandleResolutionMinutes;

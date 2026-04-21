@@ -61,9 +61,9 @@ export function useTradingSocket(wsUrl: string) {
           portfolio: snap.portfolio,
           riskMetrics: snap.riskMetrics,
           regimes: snap.regimes,
-          regimeSequences: {} as Record<Asset, MarketRegime[]>,
+          regimeSequences: (snap.regimeSequences ?? {}) as Record<Asset, MarketRegime[]>,
           candles: Object.fromEntries(
-            snap.assets.map((a) => [a, snap.latestCandles[a] ? [snap.latestCandles[a]] : []])
+            snap.assets.map((a) => [a, (snap.candles?.[a] ?? (snap.latestCandles[a] ? [snap.latestCandles[a]] : [])).slice(-MAX_CANDLE_HISTORY)])
           ) as Record<Asset, Candle[]>,
           latestCandles: snap.latestCandles,
           recentTrades: snap.recentTrades,
@@ -76,7 +76,11 @@ export function useTradingSocket(wsUrl: string) {
         setState((prev) => {
           if (!prev) return prev;
           const existing = prev.candles[asset] ?? [];
-          const updated = [...existing, candle].slice(-MAX_CANDLE_HISTORY);
+          const last = existing[existing.length - 1];
+          const updated = (last?.timestamp === candle.timestamp
+            ? [...existing.slice(0, -1), candle]
+            : [...existing, candle]
+          ).slice(-MAX_CANDLE_HISTORY);
           return {
             ...prev,
             candles: { ...prev.candles, [asset]: updated },

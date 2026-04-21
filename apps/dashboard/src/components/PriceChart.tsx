@@ -66,6 +66,8 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
         borderColor: "#1e293b",
         timeVisible: true,
         secondsVisible: false,
+        fixLeftEdge: true,
+        fixRightEdge: true,
         tickMarkFormatter: (time: Time) => formatLocalTimeLabel(time),
       },
       localization: {
@@ -107,23 +109,23 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return;
 
-    const data: CandlestickData[] = candles.map((c, i) => ({
-      time: Math.floor(
-        c.timestamp / 1000,
-      ) as unknown as CandlestickData["time"],
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const startIdx = candles.findIndex((c) => c.timestamp >= cutoff);
+    const visible = startIdx === -1 ? candles : candles.slice(startIdx);
+    const offset = startIdx === -1 ? 0 : startIdx;
+
+    const data: CandlestickData[] = visible.map((c, i) => ({
+      time: Math.floor(c.timestamp / 1000) as unknown as CandlestickData["time"],
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
-      // Colour individual candles by regime if available
-      ...(regimes[i]
+      ...(regimes[offset + i]
         ? {
             color:
-              regimes[i] === MarketRegime.Bull
-                ? "#4ade80"
-                : regimes[i] === MarketRegime.Bear
-                ? "#f87171"
-                : "#9ca3af",
+              regimes[offset + i] === MarketRegime.Bull ? "#4ade80"
+              : regimes[offset + i] === MarketRegime.Bear ? "#f87171"
+              : "#9ca3af",
           }
         : {}),
     }));

@@ -164,6 +164,8 @@ export interface SnapshotPayload {
   portfolio: Portfolio;
   riskMetrics: RiskMetrics;
   regimes: Record<Asset, RegimeState>;
+  regimeSequences: Record<Asset, MarketRegime[]>;
+  candles: Record<Asset, Candle[]>;
   latestCandles: Record<Asset, Candle>;
   recentTrades: Order[];
 }

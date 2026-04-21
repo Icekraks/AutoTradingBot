@@ -1,4 +1,4 @@
-import type { Asset, Candle, Order, Portfolio, RegimeState } from "@trading-bot/shared";
+import type { Asset, Candle, Order, Portfolio, RegimeState, MarketRegime } from "@trading-bot/shared";
 import { OrderSide, OrderStatus } from "@trading-bot/shared";
 import type { IBroker } from "../brokers/broker.interface.js";
 import { RegimeDetector } from "../hmm/regime.js";
@@ -258,16 +258,20 @@ export class TradingEngine {
 
   getSnapshot() {
     const regimes: Record<Asset, RegimeState> = {} as Record<Asset, RegimeState>;
+    const regimeSequences: Record<Asset, MarketRegime[]> = {} as Record<Asset, MarketRegime[]>;
+    const candles: Record<Asset, Candle[]> = {} as Record<Asset, Candle[]>;
     const latestCandles: Record<Asset, Candle> = {} as Record<Asset, Candle>;
 
     for (const asset of this.assets) {
       const buffer = this.candleBuffers.get(asset) ?? [];
       const detector = this.detectors.get(asset)!;
 
+      candles[asset] = buffer;
       if (buffer.length > 0) {
         latestCandles[asset] = buffer[buffer.length - 1];
         if (detector.isTrained) {
           regimes[asset] = detector.currentRegime(buffer);
+          regimeSequences[asset] = detector.decodeSequence(buffer);
         }
       }
     }
@@ -281,6 +285,8 @@ export class TradingEngine {
       },
       riskMetrics: this.riskManager.getMetrics(),
       regimes,
+      regimeSequences,
+      candles,
       latestCandles,
       recentTrades: this.recentTrades,
     };

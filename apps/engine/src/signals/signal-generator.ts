@@ -4,7 +4,6 @@ import type { RegimeState } from "@trading-bot/shared";
 
 const RSI_PERIOD = 14;
 const RSI_OVERBOUGHT = 70;
-const RSI_OVERSOLD = 30;
 
 /** Wilder's RSI */
 function calculateRSI(closes: number[], period = RSI_PERIOD): number {
@@ -56,17 +55,14 @@ export function generateSignal(ctx: SignalContext): TradeSignal {
   // Entry: fast 15min drives timing; slow 1h must not be actively Bear (opposing)
   // Exit: slow 1h turning Bear is the primary exit — wait for the major trend to confirm reversal
   const slowActiveBear = slowRegime.regime === MarketRegime.Bear && slowRegime.confidence > 0.6;
-  const slowActiveBull = slowRegime.regime === MarketRegime.Bull && slowRegime.confidence > 0.6;
 
+  // Long-only: Buy on fast bullish entry, Sell only to exit (driven by slow 1h reversal)
   if (slowActiveBear) {
     type = SignalType.Sell;
-    reason = `1h Bear (${(slowRegime.confidence * 100).toFixed(0)}%) — major trend exit, RSI ${rsi.toFixed(1)}`;
+    reason = `1h Bear (${(slowRegime.confidence * 100).toFixed(0)}%) — exit long, RSI ${rsi.toFixed(1)}`;
   } else if (regime.regime === MarketRegime.Bull && rsi < RSI_OVERBOUGHT && regime.confidence > 0.6 && !slowActiveBear) {
     type = SignalType.Buy;
     reason = `15m Bull (${(regime.confidence * 100).toFixed(0)}%), 1h=${slowRegime.regime}, RSI ${rsi.toFixed(1)}`;
-  } else if (regime.regime === MarketRegime.Bear && rsi > RSI_OVERSOLD && regime.confidence > 0.6 && !slowActiveBull) {
-    type = SignalType.Sell;
-    reason = `15m Bear (${(regime.confidence * 100).toFixed(0)}%), 1h=${slowRegime.regime}, RSI ${rsi.toFixed(1)}`;
   }
 
   return {

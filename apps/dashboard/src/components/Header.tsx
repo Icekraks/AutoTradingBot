@@ -21,7 +21,7 @@ export function Header({
 }: HeaderProps) {
   const [pendingMode, setPendingMode] = useState<boolean | null>(null);
   const paper = portfolio.paper;
-  const paperPnl = paper ? paper.realisedPnlAUD + paper.unrealisedPnlAUD : 0;
+  const paperPnl = paper ? paper.totalValueAUD - paper.startingAUD : 0;
   const paperPnlPct =
     paper && paper.startingAUD > 0 ? (paperPnl / paper.startingAUD) * 100 : 0;
   const paperPositive = paperPnl >= 0;
@@ -87,7 +87,6 @@ export function Header({
                   paperPositive ? "text-green-400" : "text-red-400"
                 }`}
               >
-                {paperPositive ? "+" : ""}
                 {formatPct(paperPnlPct)} ({paperPositive ? "+" : ""}
                 {formatCurrency(paperPnl)})
               </span>
