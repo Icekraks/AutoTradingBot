@@ -1,0 +1,24 @@
+{
+  "name": "auto-trading-bot",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "backtest": "turbo run backtest",
+    "dashboard:dev": "pnpm --filter @trading-bot/dashboard dev",
+    "dashboard:start": "pnpm --filter @trading-bot/dashboard start",
+    "engine:dev": "pnpm --filter @trading-bot/engine dev",
+    "engine:start": "pnpm --filter @trading-bot/engine start"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

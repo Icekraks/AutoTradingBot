@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 212 100% 60%;
+    --primary: 212 100% 60%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+}
+
+/* Regime colour utilities */
+.text-bull      { color: #4ade80; }
+.text-bear      { color: #f87171; }
+.text-sideways  { color: #9ca3af; }
+
+.badge-bull     { @apply bg-green-950 text-green-400 border border-green-800; }
+.badge-bear     { @apply bg-red-950 text-red-400 border border-red-800; }
+.badge-sideways { @apply bg-slate-800 text-slate-400 border border-slate-600; }
