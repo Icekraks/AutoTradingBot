@@ -30,6 +30,11 @@ export class RiskManager {
   }
 
   evaluate(signal: TradeSignal): RiskDecision {
+    const portfolio = this.portfolioRef();
+
+    // ── Reset daily tracking at midnight AEST ────────────────────────────
+    this.maybeResetDaily(portfolio.totalValueAUD);
+
     if (signal.type === SignalType.Hold) {
       return { approved: false, reason: "Signal is Hold" };
     }
@@ -38,11 +43,7 @@ export class RiskManager {
       return { approved: false, reason: `Circuit breaker active: ${this.haltReason}` };
     }
 
-    const portfolio = this.portfolioRef();
     const positions = (this.paperPortfolioRef ?? this.portfolioRef)().positions;
-
-    // ── Reset daily tracking at midnight AEST ────────────────────────────
-    this.maybeResetDaily(portfolio.totalValueAUD);
 
     // ── Guardrail 1: daily loss limit ────────────────────────────────────
     const dailyPnlPct = this.dailyPnlPct(portfolio.totalValueAUD);

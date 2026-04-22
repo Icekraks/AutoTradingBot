@@ -10,7 +10,15 @@ interface RiskGaugesProps {
 }
 
 export function RiskGauges({ metrics }: RiskGaugesProps) {
-  if (!metrics) return null;
+  if (!metrics) return (
+    <div className="rounded-lg border border-border bg-card p-3 shrink-0 animate-pulse">
+      <div className="h-3 w-24 bg-muted rounded mb-3" />
+      <div className="flex flex-col gap-3">
+        <div className="h-8 bg-muted rounded" />
+        <div className="h-8 bg-muted rounded" />
+      </div>
+    </div>
+  );
 
   const dailyUsedPct = Math.min(
     Math.abs(metrics.dailyPnlPct) / metrics.dailyLossLimitPct,

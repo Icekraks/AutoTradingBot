@@ -171,29 +171,53 @@ export class SwyftxBroker implements IBroker {
     quoteAsset: string,
     callback: (price: number, timestamp: number) => void
   ): Promise<() => void> {
-    const ws = new WebSocket(`${config.swyftx.wsUrl}/`);
+    const symbol = KRAKEN_WS_SYMBOL[`${asset}/${quoteAsset}`];
+    if (!symbol) {
+      console.warn(`[Swyftx] No Kraken WS symbol for ${asset}/${quoteAsset} — ticks unavailable`);
+      return () => {};
+    }
 
-    ws.on("open", () => {
-      ws.send(
-        JSON.stringify({
-          type: "subscribe",
-          channel: "ticker",
-          asset,
-          secondary: quoteAsset,
-        })
-      );
-    });
+    let ws: WebSocket | null = null;
+    let closed = false;
 
-    ws.on("message", (data: Buffer) => {
-      try {
-        const msg = JSON.parse(data.toString()) as SwyftxTickMessage;
-        if (msg.type === "ticker" && msg.asset === asset) {
-          callback(Number(msg.lastPrice), Date.now());
-        }
-      } catch {}
-    });
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket("wss://ws.kraken.com/v2");
 
-    return () => ws.close();
+      ws.on("open", () => {
+        ws!.send(JSON.stringify({
+          method: "subscribe",
+          params: { channel: "ticker", symbol: [symbol] },
+        }));
+      });
+
+      ws.on("message", (data: Buffer) => {
+        try {
+          const msg = JSON.parse(data.toString()) as KrakenWSTicker;
+          if (msg.channel === "ticker" && Array.isArray(msg.data)) {
+            for (const tick of msg.data) {
+              if (tick.symbol === symbol && tick.last != null) {
+                callback(tick.last, Date.now());
+              }
+            }
+          }
+        } catch {}
+      });
+
+      ws.on("error", (err) => {
+        console.warn(`[Kraken] Tick WS error for ${asset}: ${err.message}`);
+      });
+
+      ws.on("close", () => {
+        if (!closed) setTimeout(connect, 5000);
+      });
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      ws?.close();
+    };
   }
 
   async disconnect(): Promise<void> {
@@ -203,6 +227,7 @@ export class SwyftxBroker implements IBroker {
 
 // ─── Kraken public OHLC ───────────────────────────────────────────────────────
 
+// Kraken REST OHLC pair names
 const KRAKEN_PAIR: Record<string, string> = {
   "BTC/AUD": "XBTAUD",
   "ETH/AUD": "ETHAUD",
@@ -211,6 +236,17 @@ const KRAKEN_PAIR: Record<string, string> = {
   "XRP/USD": "XRPUSD",
   "SOL/USD": "SOLUSD",
   "ADA/USD": "ADAUSD",
+};
+
+// Kraken WebSocket v2 symbol names (BTC not XBT)
+const KRAKEN_WS_SYMBOL: Record<string, string> = {
+  "BTC/AUD": "BTC/AUD",
+  "ETH/AUD": "ETH/AUD",
+  "BTC/USD": "BTC/USD",
+  "ETH/USD": "ETH/USD",
+  "XRP/USD": "XRP/USD",
+  "SOL/USD": "SOL/USD",
+  "ADA/USD": "ADA/USD",
 };
 
 // Each row: [time, open, high, low, close, vwap, volume, count]
@@ -238,8 +274,7 @@ interface SwyftxAsset {
   code: string;
 }
 
-interface SwyftxTickMessage {
-  type: string;
-  asset: string;
-  lastPrice: string;
+interface KrakenWSTicker {
+  channel: string;
+  data: Array<{ symbol: string; last: number }>;
 }
