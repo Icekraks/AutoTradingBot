@@ -11,6 +11,7 @@
     "backtest": "tsx src/backtest/run.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@trading-bot/shared": "workspace:*",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",

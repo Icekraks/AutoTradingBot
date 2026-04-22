@@ -42,8 +42,10 @@ export const config = {
   hmm: {
     candleResolutionMinutes: Number(getEnv("HMM_CANDLE_RESOLUTION", "15")),
     lookbackCandles: Number(getEnv("HMM_LOOKBACK_CANDLES", "500")),
+    regimeWindow: Number(getEnv("HMM_REGIME_WINDOW", "100")),
     slowCandleResolutionMinutes: Number(getEnv("HMM_SLOW_CANDLE_RESOLUTION", "60")),
     slowLookbackCandles: Number(getEnv("HMM_SLOW_LOOKBACK_CANDLES", "500")),
+    slowRegimeWindow: Number(getEnv("HMM_SLOW_REGIME_WINDOW", "50")),
     numStates: Number(getEnv("HMM_NUM_STATES", "3")),
     retrainIntervalHours: Number(getEnv("HMM_RETRAIN_INTERVAL_HOURS", "6")),
   },

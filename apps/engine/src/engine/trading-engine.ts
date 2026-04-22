@@ -5,6 +5,7 @@ import { RegimeDetector } from "../hmm/regime.js";
 import { generateSignal } from "../signals/signal-generator.js";
 import { RiskManager } from "../guardrails/risk-manager.js";
 import { PaperTracker } from "./paper-tracker.js";
+import { ClaudeAnalytics } from "../analytics/claude-analytics.js";
 import { config } from "../config.js";
 
 export type EngineEvent =
@@ -42,6 +43,9 @@ export class TradingEngine {
   };
 
   private riskManager: RiskManager;
+  private claude: ClaudeAnalytics = new ClaudeAnalytics();
+  private latestRegimes: Map<Asset, { fast: RegimeState; slow: RegimeState }> = new Map();
+  private tickCount = 0;
   private intervalHandle: NodeJS.Timeout | null = null;
   private listeners: EngineEventHandler[] = [];
 
@@ -159,6 +163,13 @@ export class TradingEngine {
       await this.processAsset(asset);
     }
 
+    // Hourly market summary (every 4 ticks on 15m candles)
+    this.tickCount++;
+    if (this.claude.enabled && this.tickCount % 4 === 0) {
+      const paperPortfolio = this.paperTracker.getPortfolio();
+      await this.claude.marketSummary(this.latestRegimes, paperPortfolio);
+    }
+
     // Periodic retrain
     for (const asset of this.assets) {
       const detector = this.detectors.get(asset)!;
@@ -188,8 +199,9 @@ export class TradingEngine {
     const slowDetector = this.slowDetectors.get(asset)!;
     if (!detector.isTrained || !slowDetector.isTrained) return;
 
-    const regime = detector.currentRegime(candles);
-    const slowRegime = slowDetector.currentRegime(slowCandles);
+    const regime = detector.currentRegime(candles.slice(-config.hmm.regimeWindow));
+    const slowRegime = slowDetector.currentRegime(slowCandles.slice(-config.hmm.slowRegimeWindow));
+    this.latestRegimes.set(asset, { fast: regime, slow: slowRegime });
     this.emit({ type: "regime", asset, regime });
 
     const signal = generateSignal({
@@ -206,6 +218,16 @@ export class TradingEngine {
     if (!decision.approved || !decision.params) {
       console.log(`[Engine] ${asset} rejected: ${decision.reason}`);
       return;
+    }
+
+    // Claude validates Buy signals before execution (Sell exits are always allowed through)
+    if (signal.type === "Buy" && this.claude.enabled) {
+      const paperPortfolio = this.paperTracker.getPortfolio();
+      const validation = await this.claude.validateSignal(signal, slowRegime, this.latestRegimes, paperPortfolio);
+      if (!validation.approved) {
+        console.log(`[Engine] ${asset} Claude rejected: ${validation.reasoning}`);
+        return;
+      }
     }
 
     const order = await this.broker.placeOrder(decision.params);

@@ -4,7 +4,8 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.swyftx.com.au)",
-      "Bash(pnpm build *)"
+      "Bash(pnpm build *)",
+      "Bash(pnpm --filter @trading-bot/engine add @anthropic-ai/sdk)"
     ]
   }
 }
