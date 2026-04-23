@@ -7,10 +7,12 @@ export class PaperTracker {
   private cashAUD: number;
   private positions: Map<Asset, Position> = new Map();
   private realisedPnlAUD = 0;
+  private readonly brokerName: string;
 
-  constructor(startingAUD: number) {
+  constructor(startingAUD: number, brokerName = "Crypto") {
     this.startingAUD = startingAUD;
     this.cashAUD = startingAUD;
+    this.brokerName = brokerName;
   }
 
   onOrderFilled(order: Order, currentPrice: number): void {
@@ -42,6 +44,7 @@ export class PaperTracker {
       unrealisedPnl: 0,
       unrealisedPnlPct: 0,
       openedAt: order.filledAt ?? Date.now(),
+      broker: this.brokerName,
     });
   }
 

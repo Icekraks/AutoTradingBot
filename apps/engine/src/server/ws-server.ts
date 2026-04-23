@@ -47,7 +47,7 @@ export function startWSServer(engine: TradingEngine): http.Server {
           ws.send(makeMessage(WSMessageType.PortfolioUpdate, { portfolio: event.portfolio }));
           break;
         case "risk":
-          ws.send(makeMessage(WSMessageType.RiskUpdate, { riskMetrics: event.metrics }));
+          ws.send(makeMessage(WSMessageType.RiskUpdate, { riskMetrics: event.metrics, brokerMetrics: event.brokerMetrics }));
           break;
         case "mode":
           ws.send(makeMessage(WSMessageType.ModeChange, { paperMode: event.paperMode }));

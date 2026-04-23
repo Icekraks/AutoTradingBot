@@ -72,8 +72,8 @@ export default function Page() {
 
         {/* Right sidebar */}
         <div className="flex flex-col gap-3 w-72 overflow-y-auto shrink-0">
-          <RiskGauges metrics={state.riskMetrics} />
-          <Positions positions={state.paperMode ? (state.portfolio?.paper?.positions ?? []) : (state.portfolio?.positions ?? [])} />
+          <RiskGauges metrics={state.riskMetrics} brokerMetrics={state.brokerMetrics} />
+          <Positions portfolio={state.portfolio} paperMode={state.paperMode} />
           <TradeLog trades={state.recentTrades ?? []} />
         </div>
       </div>

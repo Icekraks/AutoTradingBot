@@ -14,22 +14,25 @@ if (envPath) {
   console.warn("[config] No .env file found — copy .env.example to .env at the repo root");
 }
 
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) throw new Error(`Missing required env var: ${key}`);
-  return value;
-}
-
 function getEnv(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
 }
 
 export const config = {
   swyftx: {
-    apiKey: requireEnv("SWYFTX_API_KEY"),
+    apiKey: getEnv("SWYFTX_API_KEY", ""),
     baseUrl: getEnv("SWYFTX_BASE_URL", "https://api.swyftx.com.au"),
     demoUrl: getEnv("SWYFTX_DEMO_URL", "https://api.demo.swyftx.com.au"),
     wsUrl: getEnv("SWYFTX_WS_URL", "wss://streaming.swyftx.com.au"),
+  },
+
+  alpaca: {
+    apiKey: getEnv("ALPACA_API_KEY", ""),
+    apiSecret: getEnv("ALPACA_API_SECRET", ""),
+    paper: getEnv("ALPACA_PAPER", "true") === "true",
+    // Assets routed to Alpaca — everything else goes to Swyftx
+    assets: getEnv("ALPACA_ASSETS", "").split(",").map((a) => a.trim()).filter(Boolean),
+    paperStartingBalance: Number(getEnv("ALPACA_PAPER_STARTING_BALANCE", "1000")),
   },
 
   trading: {

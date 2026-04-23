@@ -1,4 +1,4 @@
-import type { Asset, Candle, Order, Portfolio, RegimeState, MarketRegime } from "@trading-bot/shared";
+import type { Asset, Candle, Order, PaperPortfolio, Portfolio, RegimeState, MarketRegime, RiskMetrics } from "@trading-bot/shared";
 import { OrderSide, OrderStatus, OrderType } from "@trading-bot/shared";
 import type { IBroker } from "../brokers/broker.interface.js";
 import { RegimeDetector } from "../hmm/regime.js";
@@ -13,7 +13,7 @@ export type EngineEvent =
   | { type: "regime"; asset: Asset; regime: RegimeState }
   | { type: "order"; order: Order }
   | { type: "portfolio"; portfolio: Portfolio }
-  | { type: "risk"; metrics: ReturnType<RiskManager["getMetrics"]> }
+  | { type: "risk"; metrics: RiskMetrics; brokerMetrics?: { name: string; metrics: RiskMetrics }[] }
   | { type: "mode"; paperMode: boolean };
 
 export type EngineEventHandler = (event: EngineEvent) => void;
@@ -23,13 +23,17 @@ export class TradingEngine {
   private assets: Asset[];
   private quoteAsset: string;
   private paperMode: boolean;
+  private alpacaAssets: Set<Asset>;
 
   private detectors: Map<Asset, RegimeDetector> = new Map();
   private slowDetectors: Map<Asset, RegimeDetector> = new Map();
   private candleBuffers: Map<Asset, Candle[]> = new Map();
   private slowCandleBuffers: Map<Asset, Candle[]> = new Map();
   private recentTrades: Order[] = [];
-  private paperTracker: PaperTracker = new PaperTracker(0);
+  private cryptoPaperTracker: PaperTracker = new PaperTracker(0, "Crypto");
+  private stocksPaperTracker: PaperTracker = new PaperTracker(0, "Stocks");
+  private cryptoPeak = 0;
+  private stocksPeak = 0;
   private tickUnsubscribers: Map<Asset, () => void> = new Map();
 
   private portfolio: Portfolio = {
@@ -42,7 +46,8 @@ export class TradingEngine {
     updatedAt: Date.now(),
   };
 
-  private riskManager: RiskManager;
+  private cryptoRiskManager: RiskManager;
+  private stocksRiskManager: RiskManager | null = null;
   private claude: ClaudeAnalytics = new ClaudeAnalytics();
   private latestRegimes: Map<Asset, { fast: RegimeState; slow: RegimeState }> = new Map();
   private tickCount = 0;
@@ -51,9 +56,10 @@ export class TradingEngine {
 
   constructor(broker: IBroker) {
     this.broker = broker;
-    this.assets = config.trading.assets;
+    this.assets = [...config.trading.assets, ...config.alpaca.assets];
     this.quoteAsset = config.trading.quoteAsset;
     this.paperMode = config.trading.paperMode;
+    this.alpacaAssets = new Set(config.alpaca.assets);
 
     for (const asset of this.assets) {
       this.detectors.set(asset, new RegimeDetector(asset));
@@ -62,10 +68,17 @@ export class TradingEngine {
       this.slowCandleBuffers.set(asset, []);
     }
 
-    this.riskManager = new RiskManager(
-      () => this.portfolio,
-      this.paperMode ? () => this.paperTracker.getPortfolio() : undefined,
+    this.cryptoRiskManager = new RiskManager(
+      () => this.cryptoPortfolioForRisk(),
+      this.paperMode ? () => this.cryptoPaperTracker.getPortfolio() : undefined,
     );
+
+    if (this.alpacaAssets.size > 0) {
+      this.stocksRiskManager = new RiskManager(
+        () => this.stocksPortfolioForRisk(),
+        this.paperMode ? () => this.stocksPaperTracker.getPortfolio() : undefined,
+      );
+    }
   }
 
   on(handler: EngineEventHandler): () => void {
@@ -80,16 +93,22 @@ export class TradingEngine {
   async start(): Promise<void> {
     await this.broker.connect();
     this.portfolio = await this.broker.getPortfolio();
-    const paperBalance = this.portfolio.totalValueAUD > 0
-      ? this.portfolio.totalValueAUD
-      : config.trading.paperStartingBalance;
-    this.riskManager.reset(paperBalance);
-    this.paperTracker.reset(paperBalance);
+
+    const cryptoBalance = this.portfolio.brokers?.find((b) => b.name === "Crypto")?.totalValue
+      ?? (this.portfolio.totalValueAUD > 0 ? this.portfolio.totalValueAUD : config.trading.paperStartingBalance);
+    const stocksBalance = this.portfolio.brokers?.find((b) => b.name === "Stocks")?.totalValue
+      ?? config.alpaca.paperStartingBalance;
+
+    this.cryptoPeak = cryptoBalance;
+    this.stocksPeak = stocksBalance;
+    this.cryptoRiskManager.reset(cryptoBalance);
+    this.stocksRiskManager?.reset(stocksBalance);
+    this.cryptoPaperTracker.reset(cryptoBalance);
+    this.stocksPaperTracker.reset(stocksBalance);
 
     await this.initialise();
     await this.subscribeAllTicks();
 
-    // Align to next 30-min boundary, then run every 30 min
     const msUntilNextCandle = this.msUntilNextCandle();
     console.log(`[Engine] First tick in ${Math.round(msUntilNextCandle / 1000)}s`);
     setTimeout(async () => {
@@ -114,6 +133,72 @@ export class TradingEngine {
     this.emit({ type: "mode", paperMode });
   }
 
+  // ─── Per-broker helpers ───────────────────────────────────────────────────
+
+  private paperTrackerFor(asset: Asset): PaperTracker {
+    return this.alpacaAssets.has(asset) ? this.stocksPaperTracker : this.cryptoPaperTracker;
+  }
+
+  private riskManagerFor(asset: Asset): RiskManager {
+    return (this.stocksRiskManager && this.alpacaAssets.has(asset))
+      ? this.stocksRiskManager
+      : this.cryptoRiskManager;
+  }
+
+  private cryptoPortfolioForRisk(): Portfolio {
+    const paper = this.cryptoPaperTracker.getPortfolio();
+    return {
+      totalValueAUD: paper.totalValueAUD,
+      cashAUD: paper.cashAUD,
+      positions: paper.positions,
+      realisedPnlAUD: paper.realisedPnlAUD,
+      unrealisedPnlAUD: paper.unrealisedPnlAUD,
+      peakValueAUD: this.cryptoPeak,
+      updatedAt: Date.now(),
+    };
+  }
+
+  private stocksPortfolioForRisk(): Portfolio {
+    const paper = this.stocksPaperTracker.getPortfolio();
+    return {
+      totalValueAUD: paper.totalValueAUD,
+      cashAUD: paper.cashAUD,
+      positions: paper.positions,
+      realisedPnlAUD: paper.realisedPnlAUD,
+      unrealisedPnlAUD: paper.unrealisedPnlAUD,
+      peakValueAUD: this.stocksPeak,
+      updatedAt: Date.now(),
+    };
+  }
+
+  private combinedPaperPortfolio(): PaperPortfolio {
+    const c = this.cryptoPaperTracker.getPortfolio();
+    const s = this.stocksPaperTracker.getPortfolio();
+    return {
+      startingAUD: c.startingAUD + s.startingAUD,
+      cashAUD: c.cashAUD + s.cashAUD,
+      positions: [...c.positions, ...s.positions],
+      realisedPnlAUD: c.realisedPnlAUD + s.realisedPnlAUD,
+      unrealisedPnlAUD: c.unrealisedPnlAUD + s.unrealisedPnlAUD,
+      totalValueAUD: c.totalValueAUD + s.totalValueAUD,
+    };
+  }
+
+  private updatePeaks(): void {
+    const cryptoValue = this.cryptoPaperTracker.getPortfolio().totalValueAUD;
+    if (cryptoValue > this.cryptoPeak) this.cryptoPeak = cryptoValue;
+
+    const stocksValue = this.stocksPaperTracker.getPortfolio().totalValueAUD;
+    if (stocksValue > this.stocksPeak) this.stocksPeak = stocksValue;
+
+    // Combined portfolio peak for non-paper mode
+    if (this.portfolio.totalValueAUD > this.portfolio.peakValueAUD) {
+      this.portfolio.peakValueAUD = this.portfolio.totalValueAUD;
+    }
+  }
+
+  // ─── Lifecycle ───────────────────────────────────────────────────────────
+
   private async initialise(): Promise<void> {
     for (const asset of this.assets) {
       const [candles, slowCandles] = await Promise.all([
@@ -124,8 +209,14 @@ export class TradingEngine {
       this.candleBuffers.set(asset, candles);
       this.slowCandleBuffers.set(asset, slowCandles);
 
-      this.detectors.get(asset)!.train(candles);
-      this.slowDetectors.get(asset)!.train(slowCandles);
+      if (candles.length >= 50) {
+        this.detectors.get(asset)!.train(candles);
+      } else {
+        console.log(`[Engine] ${asset} — only ${candles.length} candles (market closed?), skipping initial train`);
+      }
+      if (slowCandles.length >= 50) {
+        this.slowDetectors.get(asset)!.train(slowCandles);
+      }
 
       console.log(`[Engine] Initialised ${asset} — fast: ${candles.length} candles, slow: ${slowCandles.length} candles`);
     }
@@ -137,27 +228,33 @@ export class TradingEngine {
     console.log(`[Engine] Tick @ ${new Date().toISOString()}`);
 
     this.portfolio = await this.broker.getPortfolio();
-    this.updatePeak();
+    this.updatePeaks();
 
-    // Update paper tracker with latest prices from candle closes
-    const prices: Record<Asset, number> = {};
+    // Update each paper tracker with latest close prices for its assets
+    const cryptoPrices: Record<Asset, number> = {};
+    const stocksPrices: Record<Asset, number> = {};
     for (const asset of this.assets) {
       const buffer = this.candleBuffers.get(asset) ?? [];
-      if (buffer.length > 0) prices[asset] = buffer[buffer.length - 1].close;
+      if (buffer.length > 0) {
+        const price = buffer[buffer.length - 1].close;
+        if (this.alpacaAssets.has(asset)) stocksPrices[asset] = price;
+        else cryptoPrices[asset] = price;
+      }
     }
-    this.paperTracker.updatePrices(prices);
+    this.cryptoPaperTracker.updatePrices(cryptoPrices);
+    this.stocksPaperTracker.updatePrices(stocksPrices);
 
-    // Candle-based stop-loss/take-profit: fill at the level price, not the close
+    // Candle-based stop-loss/take-profit
     for (const asset of this.assets) {
       const buffer = this.candleBuffers.get(asset) ?? [];
       if (buffer.length === 0) continue;
       const latest = buffer[buffer.length - 1];
-      const fillPrice = this.paperTracker.checkCandleTrigger(asset, latest.low, latest.high);
+      const fillPrice = this.paperTrackerFor(asset).checkCandleTrigger(asset, latest.low, latest.high);
       if (fillPrice !== null) this.triggerPaperExit(asset, fillPrice);
     }
 
     this.emitPortfolio();
-    this.emit({ type: "risk", metrics: this.riskManager.getMetrics() });
+    this.emitRisk();
 
     for (const asset of this.assets) {
       await this.processAsset(asset);
@@ -166,8 +263,7 @@ export class TradingEngine {
     // Hourly market summary (every 4 ticks on 15m candles)
     this.tickCount++;
     if (this.claude.enabled && this.tickCount % 4 === 0) {
-      const paperPortfolio = this.paperTracker.getPortfolio();
-      await this.claude.marketSummary(this.latestRegimes, paperPortfolio);
+      await this.claude.marketSummary(this.latestRegimes, this.combinedPaperPortfolio());
     }
 
     // Periodic retrain
@@ -177,9 +273,11 @@ export class TradingEngine {
         ? (Date.now() - detector.trainedTimestamp) / 3_600_000
         : Infinity;
 
-      if (hoursSinceTrain >= config.hmm.retrainIntervalHours) {
-        detector.train(this.candleBuffers.get(asset)!);
-        this.slowDetectors.get(asset)!.train(this.slowCandleBuffers.get(asset)!);
+      const buf = this.candleBuffers.get(asset)!;
+      const slowBuf = this.slowCandleBuffers.get(asset)!;
+      if (hoursSinceTrain >= config.hmm.retrainIntervalHours && buf.length >= 50) {
+        detector.train(buf);
+        if (slowBuf.length >= 50) this.slowDetectors.get(asset)!.train(slowBuf);
       }
     }
   }
@@ -214,15 +312,16 @@ export class TradingEngine {
 
     console.log(`[Engine] ${asset} signal=${signal.type} regime=${regime.regime} rsi=${signal.rsi.toFixed(1)}`);
 
-    const decision = this.riskManager.evaluate(signal);
+    const riskManager = this.riskManagerFor(asset);
+    const decision = riskManager.evaluate(signal);
     if (!decision.approved || !decision.params) {
       console.log(`[Engine] ${asset} rejected: ${decision.reason}`);
       return;
     }
 
-    // Claude validates Buy signals before execution (Sell exits are always allowed through)
+    // Claude validates Buy signals before execution
     if (signal.type === "Buy" && this.claude.enabled) {
-      const paperPortfolio = this.paperTracker.getPortfolio();
+      const paperPortfolio = this.paperTrackerFor(asset).getPortfolio();
       const validation = await this.claude.validateSignal(signal, slowRegime, this.latestRegimes, paperPortfolio);
       if (!validation.approved) {
         console.log(`[Engine] ${asset} Claude rejected: ${validation.reasoning}`);
@@ -236,26 +335,54 @@ export class TradingEngine {
       if (this.recentTrades.length > 50) this.recentTrades.pop();
 
       if (order.paperId) {
-        this.paperTracker.onOrderFilled(order, latest.close);
+        this.paperTrackerFor(asset).onOrderFilled(order, latest.close);
         this.emitPortfolio();
       }
 
       this.emit({ type: "order", order });
     }
 
-    this.emit({ type: "risk", metrics: this.riskManager.getMetrics() });
+    this.emitRisk();
   }
 
+  // ─── Emitters ────────────────────────────────────────────────────────────
+
   private emitPortfolio(): void {
-    const portfolioWithPaper: Portfolio = {
-      ...this.portfolio,
-      paper: this.paperMode ? this.paperTracker.getPortfolio() : undefined,
-    };
-    this.emit({ type: "portfolio", portfolio: portfolioWithPaper });
+    const combined = this.paperMode ? this.combinedPaperPortfolio() : undefined;
+    const brokers = this.portfolio.brokers?.map((b) => ({
+      ...b,
+      paper: this.paperMode
+        ? (b.name === "Stocks" ? this.stocksPaperTracker.getPortfolio() : this.cryptoPaperTracker.getPortfolio())
+        : undefined,
+    }));
+
+    this.emit({
+      type: "portfolio",
+      portfolio: { ...this.portfolio, paper: combined, brokers },
+    });
+  }
+
+  private emitRisk(): void {
+    const cryptoMetrics = this.cryptoRiskManager.getMetrics();
+
+    if (this.stocksRiskManager) {
+      const stocksMetrics = this.stocksRiskManager.getMetrics();
+      this.emit({
+        type: "risk",
+        metrics: cryptoMetrics,
+        brokerMetrics: [
+          { name: "Crypto", metrics: cryptoMetrics },
+          { name: "Stocks", metrics: stocksMetrics },
+        ],
+      });
+    } else {
+      this.emit({ type: "risk", metrics: cryptoMetrics });
+    }
   }
 
   private triggerPaperExit(asset: Asset, fillPrice: number): void {
-    const pos = this.paperTracker.getPortfolio().positions.find((p) => p.asset === asset);
+    const tracker = this.paperTrackerFor(asset);
+    const pos = tracker.getPortfolio().positions.find((p) => p.asset === asset);
     if (!pos) return;
     const order: Order = {
       id: crypto.randomUUID(),
@@ -270,7 +397,7 @@ export class TradingEngine {
       createdAt: Date.now(),
       filledAt: Date.now(),
     };
-    this.paperTracker.onOrderFilled(order, fillPrice);
+    tracker.onOrderFilled(order, fillPrice);
     this.recentTrades.unshift(order);
     if (this.recentTrades.length > 50) this.recentTrades.pop();
     this.emit({ type: "order", order });
@@ -282,20 +409,12 @@ export class TradingEngine {
     for (const asset of this.assets) {
       const unsub = await this.broker.subscribeTicks(asset, this.quoteAsset, (price) => {
         if (!this.paperMode) return;
-        const fillPrice = this.paperTracker.checkPriceTrigger(asset, price);
-        if (fillPrice !== null) {
-          this.triggerPaperExit(asset, fillPrice);
-        }
+        const fillPrice = this.paperTrackerFor(asset).checkPriceTrigger(asset, price);
+        if (fillPrice !== null) this.triggerPaperExit(asset, fillPrice);
       });
       this.tickUnsubscribers.set(asset, unsub);
     }
     console.log(`[Engine] Subscribed to live ticks for ${this.assets.join(", ")}`);
-  }
-
-  private updatePeak(): void {
-    if (this.portfolio.totalValueAUD > this.portfolio.peakValueAUD) {
-      this.portfolio.peakValueAUD = this.portfolio.totalValueAUD;
-    }
   }
 
   private msUntilNextCandle(): number {
@@ -324,14 +443,28 @@ export class TradingEngine {
       }
     }
 
+    const combined = this.paperMode ? this.combinedPaperPortfolio() : undefined;
+    const brokers = this.portfolio.brokers?.map((b) => ({
+      ...b,
+      paper: this.paperMode
+        ? (b.name === "Stocks" ? this.stocksPaperTracker.getPortfolio() : this.cryptoPaperTracker.getPortfolio())
+        : undefined,
+    }));
+
+    const cryptoMetrics = this.cryptoRiskManager.getMetrics();
+    const brokerMetrics = this.stocksRiskManager
+      ? [
+          { name: "Crypto", metrics: cryptoMetrics },
+          { name: "Stocks", metrics: this.stocksRiskManager.getMetrics() },
+        ]
+      : undefined;
+
     return {
       paperMode: this.paperMode,
       assets: this.assets,
-      portfolio: {
-        ...this.portfolio,
-        paper: this.paperMode ? this.paperTracker.getPortfolio() : undefined,
-      },
-      riskMetrics: this.riskManager.getMetrics(),
+      portfolio: { ...this.portfolio, paper: combined, brokers },
+      riskMetrics: cryptoMetrics,
+      brokerMetrics,
       regimes,
       regimeSequences,
       candles,

@@ -99,6 +99,7 @@ export interface Position {
   unrealisedPnl: number;
   unrealisedPnlPct: number;
   openedAt: number;
+  broker?: string; // "Crypto" | "Stocks" — set when running multi-broker
 }
 
 // ─── Portfolio ────────────────────────────────────────────────────────────────
@@ -112,6 +113,16 @@ export interface PaperPortfolio {
   totalValueAUD: number;
 }
 
+export interface BrokerPortfolio {
+  name: string; // "Crypto" | "Stocks"
+  totalValue: number;
+  cash: number;
+  positions: Position[];
+  realisedPnl: number;
+  unrealisedPnl: number;
+  paper?: PaperPortfolio;
+}
+
 export interface Portfolio {
   totalValueAUD: number;
   cashAUD: number;
@@ -120,7 +131,8 @@ export interface Portfolio {
   unrealisedPnlAUD: number;
   peakValueAUD: number;
   updatedAt: number;
-  paper?: PaperPortfolio; // populated when paperMode=true
+  paper?: PaperPortfolio; // combined paper portfolio
+  brokers?: BrokerPortfolio[]; // per-broker breakdown when multi-broker is active
 }
 
 // ─── Risk Metrics ─────────────────────────────────────────────────────────────
@@ -163,6 +175,7 @@ export interface SnapshotPayload {
   assets: Asset[];
   portfolio: Portfolio;
   riskMetrics: RiskMetrics;
+  brokerMetrics?: BrokerRiskMetrics[];
   regimes: Record<Asset, RegimeState>;
   regimeSequences: Record<Asset, MarketRegime[]>;
   candles: Record<Asset, Candle[]>;
@@ -192,8 +205,14 @@ export interface PortfolioUpdatePayload {
   portfolio: Portfolio;
 }
 
+export interface BrokerRiskMetrics {
+  name: string;
+  metrics: RiskMetrics;
+}
+
 export interface RiskUpdatePayload {
   riskMetrics: RiskMetrics;
+  brokerMetrics?: BrokerRiskMetrics[];
 }
 
 export interface ModeChangePayload {
