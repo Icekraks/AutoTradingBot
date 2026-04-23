@@ -124,6 +124,20 @@ export class HiddenMarkovModel {
   // ─── Baum-Welch training ─────────────────────────────────────────────────
 
   train(obs: number[][], maxIter = 150, tolerance = 1e-5): void {
+    // Reinitialize before each run so periodic retraining starts clean
+    this.initializeParams();
+
+    // Scale initial variances to observed data — prevents degenerate uniform emissions
+    // when data variance (1e-5 for crypto log returns) << initial variance (1.0)
+    for (let f = 0; f < this.numFeatures; f++) {
+      const vals = obs.map((o) => o[f]);
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const dataVar = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
+      for (let i = 0; i < this.numStates; i++) {
+        this.variances[i][f] = Math.max(dataVar * 2, 1e-8);
+      }
+    }
+
     let prevLogLikelihood = -Infinity;
     const T = obs.length;
     const N = this.numStates;

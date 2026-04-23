@@ -61,16 +61,19 @@ export function generateSignal(ctx: SignalContext): TradeSignal {
 
   const slowActiveBull = slowRegime.regime === MarketRegime.Bull && slowRegime.confidence > SLOW_BULL_CONFIDENCE;
 
-  // Long-only: Buy on fast bullish entry, Sell only to exit (driven by slow 1h reversal)
+  // Exit: 1h Bear is the primary exit signal
+  // Entry: BOTH 15m and 1h must be Bull — prevents buying spike candles or weak single-timeframe signals
   if (slowActiveBear) {
     type = SignalType.Sell;
     reason = `1h Bear (${(slowRegime.confidence * 100).toFixed(0)}%) — exit long, RSI ${rsi.toFixed(1)}`;
-  } else if (regime.regime === MarketRegime.Bull && rsi < RSI_OVERBOUGHT && regime.confidence > HMM_CONFIDENCE_THRESHOLD && !slowActiveBear) {
+  } else if (
+    regime.regime === MarketRegime.Bull &&
+    regime.confidence > HMM_CONFIDENCE_THRESHOLD &&
+    slowActiveBull &&
+    rsi < RSI_OVERBOUGHT
+  ) {
     type = SignalType.Buy;
-    reason = `15m Bull (${(regime.confidence * 100).toFixed(0)}%), 1h=${slowRegime.regime}, RSI ${rsi.toFixed(1)}`;
-  } else if (slowActiveBull && rsi < RSI_OVERBOUGHT && !slowActiveBear) {
-    type = SignalType.Buy;
-    reason = `1h Bull (${(slowRegime.confidence * 100).toFixed(0)}%) — slow trend entry, RSI ${rsi.toFixed(1)}`;
+    reason = `15m Bull (${(regime.confidence * 100).toFixed(0)}%) + 1h Bull (${(slowRegime.confidence * 100).toFixed(0)}%) aligned, RSI ${rsi.toFixed(1)}`;
   }
 
   return {
