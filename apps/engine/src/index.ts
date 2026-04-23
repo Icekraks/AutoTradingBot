@@ -37,6 +37,13 @@ async function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
+// Prevent transient network errors from crashing the process.
+// The per-call withRetry already handles retries; this catches anything that
+// still leaks through (e.g. mid-tick ECONNRESET on a non-retried path).
+process.on("unhandledRejection", (reason) => {
+  console.error("[Main] Unhandled rejection (engine continues):", reason);
+});
+
 main().catch((err) => {
   console.error("[Main] Fatal error:", err);
   process.exit(1);

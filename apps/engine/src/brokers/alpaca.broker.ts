@@ -38,21 +38,25 @@ export class AlpacaBroker implements IBroker {
     resolutionMinutes: number,
     count: number
   ): Promise<Candle[]> {
-    // Go back far enough to cover `count` bars across trading sessions
+    // Go back far enough to cover `count` bars across trading sessions.
+    // Do not specify feed= for historical bars — IEX is real-time only and causes
+    // ECONNRESET on historical requests. Default (SIP) works for paper accounts.
     const start = new Date();
     start.setDate(start.getDate() - 30);
 
-    const res = await this.dataHttp.get<AlpacaBarsResponse>(`/stocks/${asset}/bars`, {
-      params: {
-        timeframe: toAlpacaTimeframe(resolutionMinutes),
-        limit: count,
-        feed: "iex",
-        sort: "asc",
-        start: start.toISOString(),
-      },
-    });
+    const res = await withRetry(() =>
+      this.dataHttp.get<AlpacaBarsResponse>(`/stocks/${asset}/bars`, {
+        params: {
+          timeframe: toAlpacaTimeframe(resolutionMinutes),
+          limit: count,
+          sort: "desc", // newest-first so limit gives us the most recent N bars
+          start: start.toISOString(),
+        },
+      })
+    );
 
-    return (res.data.bars ?? []).map((b) => ({
+    // Reverse to restore chronological order for the HMM and chart
+    return (res.data.bars ?? []).reverse().map((b) => ({
       timestamp: new Date(b.t).getTime(),
       open: b.o,
       high: b.h,
@@ -63,16 +67,16 @@ export class AlpacaBroker implements IBroker {
   }
 
   async getPrice(asset: Asset, _quoteAsset: string): Promise<number> {
-    const res = await this.dataHttp.get<AlpacaLatestTrade>(`/stocks/${asset}/trades/latest`, {
-      params: { feed: "iex" },
-    });
+    // Use SIP feed (same as bars) so prices are consistent. IEX only covers ~3-5%
+    // of US equity volume and diverges from SIP bar close prices.
+    const res = await this.dataHttp.get<AlpacaLatestTrade>(`/stocks/${asset}/trades/latest`);
     return res.data.trade.p;
   }
 
   async getPortfolio(): Promise<Portfolio> {
     const [accountRes, positionsRes] = await Promise.all([
-      this.http.get<AlpacaAccount>("/account"),
-      this.http.get<AlpacaPosition[]>("/positions"),
+      withRetry(() => this.http.get<AlpacaAccount>("/account")),
+      withRetry(() => this.http.get<AlpacaPosition[]>("/positions")),
     ]);
 
     const cash = Number(accountRes.data.cash);
@@ -157,7 +161,9 @@ export class AlpacaBroker implements IBroker {
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket("wss://stream.data.alpaca.markets/v2/iex");
+      // SIP feed = consolidated all-exchange data, consistent with bar prices.
+      // Paper accounts get real-time SIP for free.
+      ws = new WebSocket("wss://stream.data.alpaca.markets/v2/sip");
 
       ws.on("open", () => {
         ws!.send(JSON.stringify({
@@ -202,6 +208,23 @@ export class AlpacaBroker implements IBroker {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const RETRYABLE = new Set(["ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "ERR_NETWORK"]);
+
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 2000): Promise<T> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code ?? "";
+      const status = (err as { response?: { status: number } }).response?.status;
+      const retryable = RETRYABLE.has(code) || status === 429 || status === 503;
+      if (!retryable || i === attempts - 1) throw err;
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw new Error("unreachable");
+}
 
 function toAlpacaTimeframe(minutes: number): string {
   if (minutes < 60) return `${minutes}Min`;
