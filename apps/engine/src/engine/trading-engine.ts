@@ -282,7 +282,29 @@ export class TradingEngine {
     }
   }
 
+  private isUSMarketOpen(): boolean {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const weekday = parts.find((p) => p.type === "weekday")?.value;
+    if (weekday === "Sat" || weekday === "Sun") return false;
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    const minuteOfDay = hour * 60 + minute;
+    return minuteOfDay >= 240 && minuteOfDay < 1200; // 04:00–20:00 ET (extended hours)
+  }
+
   private async processAsset(asset: Asset): Promise<void> {
+    if (this.alpacaAssets.has(asset) && !this.isUSMarketOpen()) {
+      console.log(`[Engine] ${asset} — US market closed, skipping`);
+      return;
+    }
+
     const [candles, slowCandles] = await Promise.all([
       this.broker.getCandles(asset, this.quoteAsset, config.hmm.candleResolutionMinutes, config.hmm.lookbackCandles),
       this.broker.getCandles(asset, this.quoteAsset, config.hmm.slowCandleResolutionMinutes, config.hmm.slowLookbackCandles),

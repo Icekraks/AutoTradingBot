@@ -129,13 +129,23 @@ export class AlpacaBroker implements IBroker {
       return order;
     }
 
+    const extendedHours = !this.isRegularHours();
+    let orderType = params.type === OrderType.Limit ? "limit" : "market";
+    let limitPrice = params.limitPrice;
+
+    if (extendedHours && orderType === "market") {
+      orderType = "limit";
+      limitPrice = await this.getPrice(params.asset, params.quoteAsset);
+    }
+
     const res = await this.http.post<AlpacaOrderResponse>("/orders", {
       symbol: params.asset,
       qty: params.quantity,
       side: params.side,
-      type: params.type === OrderType.Limit ? "limit" : "market",
+      type: orderType,
       time_in_force: "day",
-      ...(params.limitPrice && { limit_price: params.limitPrice }),
+      ...(limitPrice && { limit_price: limitPrice }),
+      ...(extendedHours && { extended_hours: true }),
     });
 
     order.id = res.data.id;
@@ -204,6 +214,23 @@ export class AlpacaBroker implements IBroker {
 
   async disconnect(): Promise<void> {
     console.log("[Alpaca] Disconnected");
+  }
+
+  private isRegularHours(): boolean {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const weekday = parts.find((p) => p.type === "weekday")?.value;
+    if (weekday === "Sat" || weekday === "Sun") return false;
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    const minuteOfDay = hour * 60 + minute;
+    return minuteOfDay >= 570 && minuteOfDay < 960; // 9:30–16:00 ET
   }
 }
 
