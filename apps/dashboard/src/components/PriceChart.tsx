@@ -83,9 +83,8 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
         timeVisible: true,
         secondsVisible: false,
         fixLeftEdge: true,
-        fixRightEdge: false,
+        fixRightEdge: true,
         tickMarkFormatter: tickFormatter,
-        barSpacing: 8,
       },
       localization: {
         locale: "en-AU",
@@ -163,19 +162,22 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
     }
     seriesRef.current.setMarkers(markers);
 
-    // On asset switch, reset to last DEFAULT_VISIBLE_HOURS of data.
-    // User's manual scroll/zoom is preserved between candle updates.
+    // On initial load or asset switch, reset to last DEFAULT_VISIBLE_HOURS.
+    // Deferred via rAF so setData's internal viewport update doesn't clobber it.
+    // User's manual scroll/zoom is preserved between candle updates for the same asset.
     if (lastAssetRef.current !== asset) {
       lastAssetRef.current = asset;
-      const nowSec = Math.floor(Date.now() / 1000);
-      try {
-        chartRef.current?.timeScale().setVisibleRange({
-          from: (nowSec - DEFAULT_VISIBLE_HOURS * 3600) as Time,
-          to: nowSec as Time,
-        });
-      } catch {
-        chartRef.current?.timeScale().fitContent();
-      }
+      requestAnimationFrame(() => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        try {
+          chartRef.current?.timeScale().setVisibleRange({
+            from: (nowSec - DEFAULT_VISIBLE_HOURS * 3600) as Time,
+            to: nowSec as Time,
+          });
+        } catch {
+          chartRef.current?.timeScale().fitContent();
+        }
+      });
     }
   }, [candles, regimes, asset]);
 
