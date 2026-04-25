@@ -6,6 +6,7 @@ dist
 .env.local
 .env.production
 *.log
+trading-state.json
 data/
 models/
 coverage/

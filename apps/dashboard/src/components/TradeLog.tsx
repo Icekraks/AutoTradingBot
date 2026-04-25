@@ -10,14 +10,20 @@ interface TradeLogProps {
 
 export function TradeLog({ trades }: TradeLogProps) {
   return (
-    <div className="rounded-lg border border-border bg-card p-3 flex flex-col min-h-0">
+    <div className="rounded-lg border border-border bg-card p-3 flex flex-col h-auto">
       <div className="flex items-center justify-between mb-3 shrink-0">
-        <span className="text-xs font-medium text-muted-foreground">Trade Log</span>
-        <span className="text-xs text-muted-foreground">{trades.length} trades</span>
+        <span className="text-xs font-medium text-muted-foreground">
+          Trade Log
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {trades.length} trades
+        </span>
       </div>
 
       {trades.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-4">No trades yet</p>
+        <p className="text-xs text-muted-foreground text-center py-4">
+          No trades yet
+        </p>
       ) : (
         <div className="flex flex-col gap-1 overflow-y-auto">
           {trades.map((order) => {
@@ -30,7 +36,9 @@ export function TradeLog({ trades }: TradeLogProps) {
                 <span
                   className={cn(
                     "w-10 text-center rounded px-1 font-medium shrink-0",
-                    isBuy ? "bg-green-950 text-green-400" : "bg-red-950 text-red-400"
+                    isBuy
+                      ? "bg-green-950 text-green-400"
+                      : "bg-red-950 text-red-400",
                   )}
                 >
                   {isBuy ? "BUY" : "SELL"}
@@ -46,7 +54,9 @@ export function TradeLog({ trades }: TradeLogProps) {
                   {formatTimestamp(order.createdAt)}
                 </span>
                 {order.paperId && (
-                  <span className="text-blue-400/60 text-xs shrink-0">paper</span>
+                  <span className="text-blue-400/60 text-xs shrink-0">
+                    paper
+                  </span>
                 )}
               </div>
             );

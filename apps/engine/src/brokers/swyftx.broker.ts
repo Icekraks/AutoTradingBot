@@ -48,6 +48,14 @@ export class SwyftxBroker implements IBroker {
   }
 
   private async authenticate(): Promise<void> {
+    // Reuse cached token from env if it's still valid — avoids /auth/refresh/ rate limit
+    const cached = process.env.SWFTYX_API_TOKEN;
+    if (cached && !this.isTokenExpired(cached)) {
+      this.accessToken = cached;
+      this.http.defaults.headers.common["Authorization"] = `Bearer ${this.accessToken}`;
+      return;
+    }
+
     const res = await this.http.post<{ accessToken: string }>(
       "/auth/refresh/",
       { apiKey: config.swyftx.apiKey },
@@ -55,6 +63,15 @@ export class SwyftxBroker implements IBroker {
     );
     this.accessToken = res.data.accessToken;
     this.http.defaults.headers.common["Authorization"] = `Bearer ${this.accessToken}`;
+  }
+
+  private isTokenExpired(token: string): boolean {
+    try {
+      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString()) as { exp: number };
+      return Date.now() >= payload.exp * 1000 - 60_000; // treat as expired 1 min early
+    } catch {
+      return true;
+    }
   }
 
   async getCandles(

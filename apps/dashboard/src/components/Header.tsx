@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Activity, Wifi, WifiOff } from "lucide-react";
-import type { Portfolio } from "@trading-bot/shared";
+import type { BrokerPortfolio, Portfolio } from "@trading-bot/shared";
 import { formatCurrency, formatPct } from "@/lib/utils";
 
 interface HeaderProps {
@@ -13,6 +13,31 @@ interface HeaderProps {
   onToggleMode: (paperMode: boolean) => void;
 }
 
+function BrokerStat({ broker, paperMode }: { broker: BrokerPortfolio; paperMode: boolean }) {
+  const paper = broker.paper;
+  const paperPnl = paper ? paper.totalValueAUD - paper.startingAUD : 0;
+  const paperPnlPct = paper && paper.startingAUD > 0 ? (paperPnl / paper.startingAUD) * 100 : 0;
+  const paperPositive = paperPnl >= 0;
+
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-xs text-muted-foreground">{broker.name}</span>
+      {paperMode && paper ? (
+        <>
+          <span className="text-base font-bold text-blue-400">
+            {formatCurrency(paper.totalValueAUD)}
+          </span>
+          <span className={`text-xs font-medium ${paperPositive ? "text-green-400" : "text-red-400"}`}>
+            {formatPct(paperPnlPct)} ({paperPositive ? "+" : ""}{formatCurrency(paperPnl)})
+          </span>
+        </>
+      ) : (
+        <span className="text-base font-bold">{formatCurrency(broker.totalValue)}</span>
+      )}
+    </div>
+  );
+}
+
 export function Header({
   portfolio,
   paperMode,
@@ -20,26 +45,18 @@ export function Header({
   onToggleMode,
 }: HeaderProps) {
   const [pendingMode, setPendingMode] = useState<boolean | null>(null);
-  const paper = portfolio.paper;
-  const paperPnl = paper
-    ? Math.round(paper.totalValueAUD * 100) / 100 -
-      Math.round(paper.startingAUD * 100) / 100
-    : 0;
-  const paperPnlPct =
-    paper && paper.startingAUD > 0 ? (paperPnl / paper.startingAUD) * 100 : 0;
-  const paperPositive = paperPnl >= 0;
-
   const isConfirmOpen = pendingMode !== null;
+
+  // Fall back to single combined view when no broker breakdown exists
+  const hasBrokers = portfolio.brokers && portfolio.brokers.length > 0;
+  const paper = portfolio.paper;
+  const paperPnl = paper ? Math.round(paper.totalValueAUD * 100) / 100 - Math.round(paper.startingAUD * 100) / 100 : 0;
+  const paperPnlPct = paper && paper.startingAUD > 0 ? (paperPnl / paper.startingAUD) * 100 : 0;
+  const paperPositive = paperPnl >= 0;
 
   useEffect(() => {
     if (!isConfirmOpen) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setPendingMode(null);
-      }
-    };
-
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setPendingMode(null); };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isConfirmOpen]);
@@ -68,80 +85,57 @@ export function Header({
           AutoTrader
         </div>
 
-        {/* Real account balance */}
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xs text-muted-foreground">Real</span>
-          <span className="text-lg font-bold">
-            {formatCurrency(portfolio.totalValueAUD)}
-          </span>
-        </div>
-
-        {/* Paper portfolio — shown when paper mode is active and tracker has data */}
-        {paperMode && paper && (
+        {hasBrokers ? (
+          // Multi-broker: show each separately
           <>
-            <div className="w-px h-5 bg-border" />
+            {portfolio.brokers!.map((broker, i) => (
+              <div key={broker.name} className="flex items-center gap-4">
+                {i > 0 && <div className="w-px h-5 bg-border" />}
+                <BrokerStat broker={broker} paperMode={paperMode} />
+              </div>
+            ))}
+          </>
+        ) : (
+          // Single broker: combined view
+          <>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-xs text-blue-400 font-medium">Paper</span>
-              <span className="text-lg font-bold">
-                {formatCurrency(paper.totalValueAUD)}
-              </span>
-              <span
-                className={`text-xs font-medium ${
-                  paperPositive ? "text-green-400" : "text-red-400"
-                }`}
-              >
-                {formatPct(paperPnlPct)} ({paperPositive ? "+" : ""}
-                {formatCurrency(paperPnl)})
-              </span>
+              <span className="text-xs text-muted-foreground">Real</span>
+              <span className="text-lg font-bold">{formatCurrency(portfolio.totalValueAUD)}</span>
             </div>
+            {paperMode && paper && (
+              <>
+                <div className="w-px h-5 bg-border" />
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xs text-blue-400 font-medium">Paper</span>
+                  <span className="text-lg font-bold">{formatCurrency(paper.totalValueAUD)}</span>
+                  <span className={`text-xs font-medium ${paperPositive ? "text-green-400" : "text-red-400"}`}>
+                    {formatPct(paperPnlPct)} ({paperPositive ? "+" : ""}{formatCurrency(paperPnl)})
+                  </span>
+                </div>
+              </>
+            )}
           </>
         )}
 
         <div className="flex-1" />
 
-        <div
-          className={`flex items-center gap-1.5 text-xs ${
-            connected ? "text-green-400" : "text-red-400"
-          }`}
-        >
+        <div className={`flex items-center gap-1.5 text-xs ${connected ? "text-green-400" : "text-red-400"}`}>
           {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
           {connected ? "Live" : "Disconnected"}
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span
-            className={
-              paperMode ? "text-muted-foreground" : "text-red-400 font-semibold"
-            }
-          >
-            LIVE
-          </span>
-          <Switch
-            checked={paperMode}
-            onCheckedChange={handleModeToggleRequest}
-          />
-          <span
-            className={
-              paperMode
-                ? "text-blue-400 font-semibold"
-                : "text-muted-foreground"
-            }
-          >
-            PAPER
-          </span>
+          <span className={paperMode ? "text-muted-foreground" : "text-red-400 font-semibold"}>LIVE</span>
+          <Switch checked={paperMode} onCheckedChange={handleModeToggleRequest} />
+          <span className={paperMode ? "text-blue-400 font-semibold" : "text-muted-foreground"}>PAPER</span>
         </div>
       </header>
 
       {isConfirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
           <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl">
-            <h2 className="text-sm font-semibold text-foreground">
-              Confirm mode switch to {modeLabel}
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {confirmationText}
-            </p>
-
+            <h2 className="text-sm font-semibold text-foreground">Confirm mode switch to {modeLabel}</h2>
+            <p className="mt-2 text-sm text-muted-foreground">{confirmationText}</p>
             <div className="mt-5 flex items-center justify-end gap-2">
               <button
                 type="button"

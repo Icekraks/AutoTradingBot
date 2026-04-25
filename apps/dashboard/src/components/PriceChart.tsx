@@ -7,6 +7,7 @@ import {
   type ISeriesApi,
   type CandlestickSeriesOptions,
   type CandlestickData,
+  type SeriesMarker,
   type Time,
   ColorType,
 } from "lightweight-charts";
@@ -16,30 +17,44 @@ import { MarketRegime } from "@trading-bot/shared";
 const QUOTE_ASSET = process.env.NEXT_PUBLIC_QUOTE_ASSET ?? "AUD";
 const FREQUENCY = process.env.NEXT_PUBLIC_FREQUENCY ?? "15m";
 
+// How many hours to show on initial load / asset switch
+const DEFAULT_VISIBLE_HOURS = 24;
+
 interface PriceChartProps {
   asset: Asset;
   candles: Candle[];
   regimes: MarketRegime[];
 }
 
-function formatLocalTimeLabel(time: Time): string {
-  if (typeof time === "number") {
-    return new Date(time * 1000).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
+const TZ = "Australia/Sydney";
 
-  if (typeof time === "object" && "year" in time) {
-    return new Date(time.year, time.month - 1, time.day).toLocaleDateString(
-      [],
-      {
-        month: "short",
-        day: "numeric",
-      },
-    );
-  }
+function fmtTime(ts: number): string {
+  return new Date(ts * 1000).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+}
 
+function fmtDate(ts: number): string {
+  return new Date(ts * 1000).toLocaleDateString("en-AU", { month: "short", day: "numeric", timeZone: TZ });
+}
+
+function aestParts(ts: number): { h: number; m: number; date: number; month: number } {
+  const d = new Date(ts * 1000);
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: TZ,
+    hour: "numeric", minute: "numeric", day: "numeric", month: "numeric",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parseInt(parts.find((p) => p.type === t)?.value ?? "0", 10);
+  return { h: get("hour"), m: get("minute"), date: get("day"), month: get("month") };
+}
+
+// lightweight-charts calls tickMarkFormatter with the unix-second timestamp as a plain number
+function tickFormatter(time: Time): string {
+  if (typeof time !== "number") return "";
+  const { h, m } = aestParts(time);
+  // Show date label at midnight AEST, time label otherwise
+  if (h === 0 && m === 0) return fmtDate(time);
+  // Show HH:MM only on the hour or half-hour so labels don't overlap
+  if (m === 0 || m === 30) return fmtTime(time);
   return "";
 }
 
@@ -47,6 +62,7 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const lastAssetRef = useRef<Asset | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -68,11 +84,12 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
         secondsVisible: false,
         fixLeftEdge: true,
         fixRightEdge: true,
-        tickMarkFormatter: (time: Time) => formatLocalTimeLabel(time),
+        tickMarkFormatter: tickFormatter,
       },
       localization: {
-        locale: navigator.language,
-        timeFormatter: (time: Time) => formatLocalTimeLabel(time),
+        locale: "en-AU",
+        timeFormatter: (time: Time) =>
+          typeof time === "number" ? `${fmtDate(time)}  ${fmtTime(time)}` : "",
       },
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
@@ -109,30 +126,60 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return;
 
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const startIdx = candles.findIndex((c) => c.timestamp >= cutoff);
-    const visible = startIdx === -1 ? candles : candles.slice(startIdx);
-    const offset = startIdx === -1 ? 0 : startIdx;
-
-    const data: CandlestickData[] = visible.map((c, i) => ({
+    const data: CandlestickData[] = candles.map((c, i) => ({
       time: Math.floor(c.timestamp / 1000) as unknown as CandlestickData["time"],
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
-      ...(regimes[offset + i]
+      ...(regimes[i]
         ? {
             color:
-              regimes[offset + i] === MarketRegime.Bull ? "#4ade80"
-              : regimes[offset + i] === MarketRegime.Bear ? "#f87171"
+              regimes[i] === MarketRegime.Bull ? "#4ade80"
+              : regimes[i] === MarketRegime.Bear ? "#f87171"
               : "#9ca3af",
           }
         : {}),
     }));
 
     seriesRef.current.setData(data);
-    chartRef.current?.timeScale().fitContent();
-  }, [candles, regimes]);
+
+    // Day-boundary markers keyed on AEST date so midnight aligns with Sydney timezone
+    const markers: SeriesMarker<Time>[] = [];
+    for (let i = 1; i < candles.length; i++) {
+      const prev = aestParts(Math.floor(candles[i - 1].timestamp / 1000));
+      const curr = aestParts(Math.floor(candles[i].timestamp / 1000));
+      if (prev.date !== curr.date || prev.month !== curr.month) {
+        markers.push({
+          time: Math.floor(candles[i].timestamp / 1000) as Time,
+          position: "belowBar",
+          color: "#475569",
+          shape: "arrowUp",
+          text: fmtDate(Math.floor(candles[i].timestamp / 1000)),
+          size: 0,
+        });
+      }
+    }
+    seriesRef.current.setMarkers(markers);
+
+    // On initial load or asset switch, reset to last DEFAULT_VISIBLE_HOURS.
+    // Deferred via rAF so setData's internal viewport update doesn't clobber it.
+    // User's manual scroll/zoom is preserved between candle updates for the same asset.
+    if (lastAssetRef.current !== asset) {
+      lastAssetRef.current = asset;
+      requestAnimationFrame(() => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        try {
+          chartRef.current?.timeScale().setVisibleRange({
+            from: (nowSec - DEFAULT_VISIBLE_HOURS * 3600) as Time,
+            to: nowSec as Time,
+          });
+        } catch {
+          chartRef.current?.timeScale().fitContent();
+        }
+      });
+    }
+  }, [candles, regimes, asset]);
 
   return (
     <div className="flex flex-col flex-1 rounded-lg border border-border bg-card overflow-hidden min-h-0">

@@ -7,10 +7,12 @@ export class PaperTracker {
   private cashAUD: number;
   private positions: Map<Asset, Position> = new Map();
   private realisedPnlAUD = 0;
+  private readonly brokerName: string;
 
-  constructor(startingAUD: number) {
+  constructor(startingAUD: number, brokerName = "Crypto") {
     this.startingAUD = startingAUD;
     this.cashAUD = startingAUD;
+    this.brokerName = brokerName;
   }
 
   onOrderFilled(order: Order, currentPrice: number): void {
@@ -42,6 +44,7 @@ export class PaperTracker {
       unrealisedPnl: 0,
       unrealisedPnlPct: 0,
       openedAt: order.filledAt ?? Date.now(),
+      broker: this.brokerName,
     });
   }
 
@@ -62,7 +65,16 @@ export class PaperTracker {
       if (price == null) continue;
       const unrealisedPnl = (price - pos.entryPrice) * pos.quantity;
       const unrealisedPnlPct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
-      this.positions.set(asset, { ...pos, currentPrice: price, unrealisedPnl, unrealisedPnlPct });
+
+      let stopLoss = pos.stopLoss;
+      if (unrealisedPnlPct >= config.risk.trailingBreakevenPct) {
+        stopLoss = Math.max(stopLoss, pos.entryPrice);
+      }
+      if (unrealisedPnlPct >= config.risk.trailingBreakevenPct + config.risk.trailingStopPct) {
+        stopLoss = Math.max(stopLoss, price * (1 - config.risk.trailingStopPct / 100));
+      }
+
+      this.positions.set(asset, { ...pos, currentPrice: price, unrealisedPnl, unrealisedPnlPct, stopLoss });
     }
   }
 
@@ -107,5 +119,22 @@ export class PaperTracker {
     this.cashAUD = startingAUD;
     this.positions.clear();
     this.realisedPnlAUD = 0;
+  }
+
+  serialise() {
+    return {
+      startingAUD: this.startingAUD,
+      cashAUD: this.cashAUD,
+      realisedPnlAUD: this.realisedPnlAUD,
+      positions: Array.from(this.positions.values()),
+    };
+  }
+
+  restore(data: ReturnType<PaperTracker["serialise"]>): void {
+    this.startingAUD = data.startingAUD;
+    this.cashAUD = data.cashAUD;
+    this.realisedPnlAUD = data.realisedPnlAUD;
+    this.positions = new Map(data.positions.map((p) => [p.asset, p]));
+    console.log(`[PaperTracker:${this.brokerName}] Restored — cash=$${this.cashAUD.toFixed(2)}, positions=${this.positions.size}`);
   }
 }

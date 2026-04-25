@@ -88,6 +88,19 @@ export class RiskManager {
       return { approved: false, reason: "Insufficient AUD balance for minimum position" };
     }
 
+    // ── Guardrail 6: sector exposure cap ─────────────────────────────────
+    if (signal.type === SignalType.Buy) {
+      const currentExposure = positions.reduce((sum, p) => sum + p.currentPrice * p.quantity, 0);
+      const totalValue = paperPortfolio?.totalValueAUD ?? portfolio.totalValueAUD;
+      const projectedExposurePct = ((currentExposure + availableAUD) / totalValue) * 100;
+      if (projectedExposurePct > config.risk.maxSectorExposurePct) {
+        return {
+          approved: false,
+          reason: `Sector exposure cap reached (${projectedExposurePct.toFixed(1)}% > ${config.risk.maxSectorExposurePct}%)`,
+        };
+      }
+    }
+
     const quantity = availableAUD / signal.price;
 
     return {

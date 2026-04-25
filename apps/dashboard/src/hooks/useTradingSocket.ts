@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type {
   Asset,
+  BrokerRiskMetrics,
   Candle,
   Order,
   Portfolio,
@@ -18,6 +19,7 @@ export interface TradingState {
   assets: Asset[];
   portfolio: Portfolio;
   riskMetrics: RiskMetrics;
+  brokerMetrics?: BrokerRiskMetrics[];
   regimes: Record<Asset, RegimeState>;
   regimeSequences: Record<Asset, MarketRegime[]>;
   candles: Record<Asset, Candle[]>;
@@ -60,6 +62,7 @@ export function useTradingSocket(wsUrl: string) {
           assets: snap.assets,
           portfolio: snap.portfolio,
           riskMetrics: snap.riskMetrics,
+          brokerMetrics: snap.brokerMetrics,
           regimes: snap.regimes,
           regimeSequences: (snap.regimeSequences ?? {}) as Record<Asset, MarketRegime[]>,
           candles: Object.fromEntries(
@@ -108,9 +111,11 @@ export function useTradingSocket(wsUrl: string) {
         setState((prev) => prev ? { ...prev, portfolio: (msg.payload as { portfolio: Portfolio }).portfolio } : prev);
         break;
 
-      case WSMessageType.RiskUpdate:
-        setState((prev) => prev ? { ...prev, riskMetrics: (msg.payload as { riskMetrics: RiskMetrics }).riskMetrics } : prev);
+      case WSMessageType.RiskUpdate: {
+        const { riskMetrics, brokerMetrics } = msg.payload as { riskMetrics: RiskMetrics; brokerMetrics?: BrokerRiskMetrics[] };
+        setState((prev) => prev ? { ...prev, riskMetrics, brokerMetrics } : prev);
         break;
+      }
 
       case WSMessageType.OrderUpdate: {
         const { order } = msg.payload as { order: Order };
