@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Asset, Candle, Order, PaperPortfolio, Portfolio, RegimeState, MarketRegime, RiskMetrics } from "@trading-bot/shared";
 import { OrderSide, OrderStatus, OrderType } from "@trading-bot/shared";
 import type { IBroker } from "../brokers/broker.interface.js";
@@ -7,6 +9,8 @@ import { RiskManager } from "../guardrails/risk-manager.js";
 import { PaperTracker } from "./paper-tracker.js";
 import { ClaudeAnalytics } from "../analytics/claude-analytics.js";
 import { config } from "../config.js";
+
+const STATE_PATH = resolve(process.cwd(), "trading-state.json");
 
 export type EngineEvent =
   | { type: "candle"; asset: Asset; candle: Candle }
@@ -107,6 +111,7 @@ export class TradingEngine {
     this.stocksPaperTracker.reset(stocksBalance);
 
     await this.initialise();
+    this.loadState();
     await this.subscribeAllTicks();
 
     const msUntilNextCandle = this.msUntilNextCandle();
@@ -280,6 +285,8 @@ export class TradingEngine {
         if (slowBuf.length >= 50) this.slowDetectors.get(asset)!.train(slowBuf);
       }
     }
+
+    this.saveState();
   }
 
   private isUSMarketOpen(): boolean {
@@ -437,6 +444,45 @@ export class TradingEngine {
       this.tickUnsubscribers.set(asset, unsub);
     }
     console.log(`[Engine] Subscribed to live ticks for ${this.assets.join(", ")}`);
+  }
+
+  private saveState(): void {
+    try {
+      const state = {
+        savedAt: Date.now(),
+        recentTrades: this.recentTrades,
+        cryptoPaperTracker: this.cryptoPaperTracker.serialise(),
+        stocksPaperTracker: this.stocksPaperTracker.serialise(),
+        detectors: Object.fromEntries(
+          this.assets.map((a) => [a, this.detectors.get(a)!.serialise()])
+        ),
+        slowDetectors: Object.fromEntries(
+          this.assets.map((a) => [a, this.slowDetectors.get(a)!.serialise()])
+        ),
+      };
+      writeFileSync(STATE_PATH, JSON.stringify(state), "utf-8");
+    } catch (err) {
+      console.warn("[Engine] Failed to save state:", (err as Error).message);
+    }
+  }
+
+  private loadState(): void {
+    try {
+      const raw = readFileSync(STATE_PATH, "utf-8");
+      const state = JSON.parse(raw);
+      console.log(`[Engine] Loading saved state from ${new Date(state.savedAt).toISOString()}`);
+
+      this.recentTrades = state.recentTrades ?? [];
+      this.cryptoPaperTracker.restore(state.cryptoPaperTracker);
+      this.stocksPaperTracker.restore(state.stocksPaperTracker);
+
+      for (const asset of this.assets) {
+        if (state.detectors?.[asset]) this.detectors.get(asset)!.restore(state.detectors[asset]);
+        if (state.slowDetectors?.[asset]) this.slowDetectors.get(asset)!.restore(state.slowDetectors[asset]);
+      }
+    } catch {
+      console.log("[Engine] No saved state found — starting fresh");
+    }
   }
 
   private msUntilNextCandle(): number {

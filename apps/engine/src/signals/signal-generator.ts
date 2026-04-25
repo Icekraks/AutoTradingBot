@@ -4,6 +4,7 @@ import type { RegimeState } from "@trading-bot/shared";
 
 const RSI_PERIOD = 14;
 const RSI_OVERBOUGHT = Number(process.env.RSI_OVERBOUGHT ?? 70);
+const RSI_EXIT = Number(process.env.RSI_EXIT ?? 75);
 const HMM_CONFIDENCE_THRESHOLD = Number(process.env.HMM_CONFIDENCE_THRESHOLD ?? 0.6);
 const SLOW_BEAR_CONFIDENCE = Number(process.env.SLOW_BEAR_CONFIDENCE ?? 0.6);
 const SLOW_BULL_CONFIDENCE = Number(process.env.SLOW_BULL_CONFIDENCE ?? 0.6);
@@ -63,9 +64,13 @@ export function generateSignal(ctx: SignalContext): TradeSignal {
 
   // Exit: 1h Bear is the primary exit signal
   // Entry: BOTH 15m and 1h must be Bull — prevents buying spike candles or weak single-timeframe signals
-  if (slowActiveBear) {
+  const rsiOverboughtExit = rsi > RSI_EXIT && !slowActiveBull;
+
+  if (slowActiveBear || rsiOverboughtExit) {
     type = SignalType.Sell;
-    reason = `1h Bear (${(slowRegime.confidence * 100).toFixed(0)}%) — exit long, RSI ${rsi.toFixed(1)}`;
+    reason = slowActiveBear
+      ? `1h Bear (${(slowRegime.confidence * 100).toFixed(0)}%) — exit long, RSI ${rsi.toFixed(1)}`
+      : `RSI overbought exit (${rsi.toFixed(1)} > ${RSI_EXIT})`;
   } else if (
     regime.regime === MarketRegime.Bull &&
     regime.confidence > HMM_CONFIDENCE_THRESHOLD &&

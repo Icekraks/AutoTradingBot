@@ -60,6 +60,9 @@ export const config = {
     stopLossPct: Number(getEnv("STOP_LOSS_PCT", "2")),
     takeProfitPct: Number(getEnv("TAKE_PROFIT_PCT", "4")),
     minHoldCandles: Number(getEnv("MIN_HOLD_CANDLES", "3")),
+    trailingBreakevenPct: Number(getEnv("TRAILING_BREAKEVEN_PCT", "1")),
+    trailingStopPct: Number(getEnv("TRAILING_STOP_PCT", "1.5")),
+    maxSectorExposurePct: Number(getEnv("MAX_SECTOR_EXPOSURE_PCT", "15")),
   },
 
   server: {

@@ -128,6 +128,14 @@ export class RegimeDetector {
     };
   }
 
+  restore(data: ReturnType<RegimeDetector["serialise"]> & Record<string, unknown>): void {
+    this.hmm = HiddenMarkovModel.fromJSON(data.hmm as Parameters<typeof HiddenMarkovModel.fromJSON>[0]);
+    this.stateLabels = data.stateLabels as Record<number, MarketRegime>;
+    this.trainedAt = data.trainedAt as number | null;
+    this.trained = true;
+    console.log(`[RegimeDetector:${this.asset}] Restored from snapshot (trained at ${new Date(this.trainedAt ?? 0).toISOString()})`);
+  }
+
   private assertTrained(): void {
     if (!this.trained) {
       throw new Error(`[RegimeDetector:${this.asset}] Not yet trained — call train() first`);
