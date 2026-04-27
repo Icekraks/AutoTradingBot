@@ -5,7 +5,12 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.swyftx.com.au)",
       "Bash(pnpm build *)",
-      "Bash(pnpm --filter @trading-bot/engine add @anthropic-ai/sdk)"
+      "Bash(pnpm --filter @trading-bot/engine add @anthropic-ai/sdk)",
+      "Bash(pnpm --filter @trading-bot/shared build)",
+      "Bash(pnpm --filter @trading-bot/engine exec tsc --noEmit)",
+      "Bash(pnpm --filter @trading-bot/dashboard exec tsc --noEmit)",
+      "Bash(python3)",
+      "Bash(python3 -c \"import sys; data=sys.stdin.read\\(\\); print\\(data[:3000]\\)\")"
     ]
   }
 }

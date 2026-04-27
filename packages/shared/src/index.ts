@@ -105,12 +105,12 @@ export interface Position {
 // ─── Portfolio ────────────────────────────────────────────────────────────────
 
 export interface PaperPortfolio {
-  startingAUD: number;
-  cashAUD: number;
+  starting: number;
+  cash: number;
   positions: Position[];
-  realisedPnlAUD: number;
-  unrealisedPnlAUD: number;
-  totalValueAUD: number;
+  realisedPnl: number;
+  unrealisedPnl: number;
+  totalValue: number;
 }
 
 export interface BrokerPortfolio {
@@ -124,12 +124,12 @@ export interface BrokerPortfolio {
 }
 
 export interface Portfolio {
-  totalValueAUD: number;
-  cashAUD: number;
+  totalValue: number;
+  cash: number;
   positions: Position[];
-  realisedPnlAUD: number;
-  unrealisedPnlAUD: number;
-  peakValueAUD: number;
+  realisedPnl: number;
+  unrealisedPnl: number;
+  peakValue: number;
   updatedAt: number;
   paper?: PaperPortfolio; // combined paper portfolio
   brokers?: BrokerPortfolio[]; // per-broker breakdown when multi-broker is active
@@ -138,7 +138,7 @@ export interface Portfolio {
 // ─── Risk Metrics ─────────────────────────────────────────────────────────────
 
 export interface RiskMetrics {
-  dailyPnlAUD: number;
+  dailyPnl: number;
   dailyPnlPct: number;
   drawdownFromPeakPct: number;
   isHalted: boolean;
@@ -171,8 +171,9 @@ export interface WSMessage<T = unknown> {
 }
 
 export interface SnapshotPayload {
-  paperMode: boolean;
+  paperModes: Record<string, boolean>;
   assets: Asset[];
+  brokerAssets: Record<string, Asset[]>;
   portfolio: Portfolio;
   riskMetrics: RiskMetrics;
   brokerMetrics?: BrokerRiskMetrics[];
@@ -216,9 +217,11 @@ export interface RiskUpdatePayload {
 }
 
 export interface ModeChangePayload {
+  broker: string;
   paperMode: boolean;
 }
 
 export interface SetModePayload {
+  broker: string;
   paperMode: boolean;
 }

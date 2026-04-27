@@ -50,17 +50,17 @@ export class MultiBroker implements IBroker {
     const stocksPositions = ap.positions.map((p) => ({ ...p, broker: "Stocks" }));
 
     const brokers: BrokerPortfolio[] = [
-      { name: "Crypto", totalValue: sp.totalValueAUD, cash: sp.cashAUD, positions: cryptoPositions, realisedPnl: sp.realisedPnlAUD, unrealisedPnl: sp.unrealisedPnlAUD },
-      { name: "Stocks", totalValue: ap.totalValueAUD, cash: ap.cashAUD, positions: stocksPositions, realisedPnl: ap.realisedPnlAUD, unrealisedPnl: ap.unrealisedPnlAUD },
+      { name: "Crypto", totalValue: sp.totalValue, cash: sp.cash, positions: cryptoPositions, realisedPnl: sp.realisedPnl, unrealisedPnl: sp.unrealisedPnl },
+      { name: "Stocks", totalValue: ap.totalValue, cash: ap.cash, positions: stocksPositions, realisedPnl: ap.realisedPnl, unrealisedPnl: ap.unrealisedPnl },
     ];
 
     return {
-      totalValueAUD: sp.totalValueAUD + ap.totalValueAUD,
-      cashAUD: sp.cashAUD + ap.cashAUD,
+      totalValue: sp.totalValue + ap.totalValue,
+      cash: sp.cash + ap.cash,
       positions: [...cryptoPositions, ...stocksPositions],
-      realisedPnlAUD: sp.realisedPnlAUD + ap.realisedPnlAUD,
-      unrealisedPnlAUD: sp.unrealisedPnlAUD + ap.unrealisedPnlAUD,
-      peakValueAUD: sp.peakValueAUD + ap.peakValueAUD,
+      realisedPnl: sp.realisedPnl + ap.realisedPnl,
+      unrealisedPnl: sp.unrealisedPnl + ap.unrealisedPnl,
+      peakValue: sp.peakValue + ap.peakValue,
       updatedAt: Date.now(),
       brokers,
     };
@@ -84,6 +84,11 @@ export class MultiBroker implements IBroker {
     callback: (price: number, timestamp: number) => void
   ): Promise<() => void> {
     return this.brokerFor(asset).subscribeTicks(asset, quoteAsset, callback);
+  }
+
+  setBrokerPaper(brokerName: string, paper: boolean): void {
+    if (brokerName === "Stocks") this.alpaca.setBrokerPaper(brokerName, paper);
+    else if (brokerName === "Crypto") this.swyftx.setBrokerPaper(brokerName, paper);
   }
 
   async disconnect(): Promise<void> {

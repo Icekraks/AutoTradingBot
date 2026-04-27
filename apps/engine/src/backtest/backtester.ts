@@ -21,7 +21,7 @@ export interface BacktestTrade {
   entryPrice: number;
   exitPrice: number;
   quantity: number;
-  pnlAUD: number;
+  pnl: number;
   pnlPct: number;
   entryTimestamp: number;
   exitTimestamp: number;
@@ -41,7 +41,7 @@ interface SimPosition {
 export class Backtester {
   private trainSplit = 0.7; // 70% train, 30% test
 
-  async run(asset: Asset, candles: Candle[], startCapitalAUD = 10_000): Promise<BacktestResult> {
+  async run(asset: Asset, candles: Candle[], startCapital = 10_000): Promise<BacktestResult> {
     const splitIdx = Math.floor(candles.length * this.trainSplit);
     const trainCandles = candles.slice(0, splitIdx);
     const testCandles = candles.slice(splitIdx);
@@ -57,8 +57,8 @@ export class Backtester {
     const testRegimes = regimes.slice(trainCandles.length - 1); // -1 due to feature extraction offset
 
     const trades: BacktestTrade[] = [];
-    let cashAUD = startCapitalAUD;
-    let peakAUD = startCapitalAUD;
+    let cash = startCapital;
+    let peak = startCapital;
     let maxDrawdown = 0;
     let position: SimPosition | null = null;
 
@@ -82,7 +82,7 @@ export class Backtester {
 
       const signal = generateSignal({
         asset,
-        quoteAsset: "AUD",
+        quoteAsset: config.trading.quoteAsset,
         candles: slidingWindow,
         regime: regimeState,
         slowRegime: regimeState,
@@ -110,7 +110,7 @@ export class Backtester {
               ? (exitPrice - position.entryPrice) * position.quantity
               : (position.entryPrice - exitPrice) * position.quantity;
 
-          cashAUD += position.entryPrice * position.quantity + pnl;
+          cash += position.entryPrice * position.quantity + pnl;
 
           trades.push({
             asset,
@@ -118,16 +118,16 @@ export class Backtester {
             entryPrice: position.entryPrice,
             exitPrice,
             quantity: position.quantity,
-            pnlAUD: pnl,
+            pnl,
             pnlPct: (pnl / (position.entryPrice * position.quantity)) * 100,
             entryTimestamp: position.entryTimestamp,
             exitTimestamp: candle.timestamp,
             entryRegime: position.entryRegime,
           });
 
-          pnlHistory.push(cashAUD);
-          if (cashAUD > peakAUD) peakAUD = cashAUD;
-          const drawdown = ((peakAUD - cashAUD) / peakAUD) * 100;
+          pnlHistory.push(cash);
+          if (cash > peak) peak = cash;
+          const drawdown = ((peak - cash) / peak) * 100;
           if (drawdown > maxDrawdown) maxDrawdown = drawdown;
 
           position = null;
@@ -136,9 +136,9 @@ export class Backtester {
 
       // Open new position if no existing one
       if (!position && signal.type !== SignalType.Hold) {
-        const maxPositionAUD = cashAUD * (config.risk.maxPositionSizePct / 100);
-        const quantity = maxPositionAUD / candle.close;
-        cashAUD -= maxPositionAUD;
+        const maxPosition = cash * (config.risk.maxPositionSizePct / 100);
+        const quantity = maxPosition / candle.close;
+        cash -= maxPosition;
 
         const stopLoss =
           signal.type === SignalType.Buy
@@ -169,10 +169,10 @@ export class Backtester {
         position.side === OrderSide.Buy
           ? (lastCandle.close - position.entryPrice) * position.quantity
           : (position.entryPrice - lastCandle.close) * position.quantity;
-      cashAUD += position.entryPrice * position.quantity + pnl;
+      cash += position.entryPrice * position.quantity + pnl;
     }
 
-    const totalReturn = cashAUD - startCapitalAUD;
+    const totalReturn = cash - startCapital;
     const returns = pnlHistory.map((v, i) => (i === 0 ? 0 : (v - pnlHistory[i - 1]) / pnlHistory[i - 1]));
     const meanReturn = returns.reduce((a, b) => a + b, 0) / (returns.length || 1);
     const stdReturn = Math.sqrt(
@@ -180,12 +180,12 @@ export class Backtester {
     );
     const sharpeRatio = stdReturn > 0 ? (meanReturn / stdReturn) * Math.sqrt(252 * 48) : 0; // annualised (48 × 30min per day)
 
-    const wins = trades.filter((t) => t.pnlAUD > 0).length;
+    const wins = trades.filter((t) => t.pnl > 0).length;
 
     return {
       asset,
       totalReturn,
-      totalReturnPct: (totalReturn / startCapitalAUD) * 100,
+      totalReturnPct: (totalReturn / startCapital) * 100,
       sharpeRatio,
       maxDrawdownPct: maxDrawdown,
       numTrades: trades.length,

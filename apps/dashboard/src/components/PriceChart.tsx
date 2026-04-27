@@ -17,8 +17,8 @@ import { MarketRegime } from "@trading-bot/shared";
 const QUOTE_ASSET = process.env.NEXT_PUBLIC_QUOTE_ASSET ?? "AUD";
 const FREQUENCY = process.env.NEXT_PUBLIC_FREQUENCY ?? "15m";
 
-// How many hours to show on initial load / asset switch
-const DEFAULT_VISIBLE_HOURS = 24;
+// How many candles to show on initial load / asset switch (~24h of 15m bars)
+const DEFAULT_VISIBLE_BARS = 96;
 
 interface PriceChartProps {
   asset: Asset;
@@ -168,14 +168,16 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
     if (lastAssetRef.current !== asset) {
       lastAssetRef.current = asset;
       requestAnimationFrame(() => {
-        const nowSec = Math.floor(Date.now() / 1000);
+        if (!chartRef.current) return;
         try {
-          chartRef.current?.timeScale().setVisibleRange({
-            from: (nowSec - DEFAULT_VISIBLE_HOURS * 3600) as Time,
-            to: nowSec as Time,
+          // Show the last N candles regardless of calendar time — works for both
+          // continuous crypto data and sparse stock data with weekend/overnight gaps
+          chartRef.current.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, candles.length - DEFAULT_VISIBLE_BARS),
+            to: candles.length - 1,
           });
         } catch {
-          chartRef.current?.timeScale().fitContent();
+          chartRef.current.timeScale().fitContent();
         }
       });
     }

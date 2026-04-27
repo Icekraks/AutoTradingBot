@@ -11,29 +11,29 @@ export interface RiskDecision {
 }
 
 export class RiskManager {
-  private dailyStartValueAUD: number = 0;
+  private dailyStartValue: number = 0;
   private dailyResetAt: number = 0;
   private halted = false;
   private haltReason: string | null = null;
 
   constructor(
     private portfolioRef: () => Portfolio,
-    private paperPortfolioRef?: () => PaperPortfolio,
+    private paperPortfolioRef?: () => PaperPortfolio | undefined,
   ) {}
 
   reset(portfolioValue: number): void {
-    this.dailyStartValueAUD = portfolioValue;
+    this.dailyStartValue = portfolioValue;
     this.dailyResetAt = Date.now();
     this.halted = false;
     this.haltReason = null;
-    console.log(`[RiskManager] Daily reset — start value $${portfolioValue.toFixed(2)} AUD`);
+    console.log(`[RiskManager] Daily reset — start value $${portfolioValue.toFixed(2)}`);
   }
 
   evaluate(signal: TradeSignal): RiskDecision {
     const portfolio = this.portfolioRef();
 
     // ── Reset daily tracking at midnight AEST ────────────────────────────
-    this.maybeResetDaily(portfolio.totalValueAUD);
+    this.maybeResetDaily(portfolio.totalValue);
 
     if (signal.type === SignalType.Hold) {
       return { approved: false, reason: "Signal is Hold" };
@@ -43,10 +43,10 @@ export class RiskManager {
       return { approved: false, reason: `Circuit breaker active: ${this.haltReason}` };
     }
 
-    const positions = (this.paperPortfolioRef ?? this.portfolioRef)().positions;
+    const positions = (this.paperPortfolioRef?.() ?? this.portfolioRef()).positions;
 
     // ── Guardrail 1: daily loss limit ────────────────────────────────────
-    const dailyPnlPct = this.dailyPnlPct(portfolio.totalValueAUD);
+    const dailyPnlPct = this.dailyPnlPct(portfolio.totalValue);
     if (dailyPnlPct <= -config.risk.maxDailyLossPct) {
       this.halt(`Daily loss limit reached (${dailyPnlPct.toFixed(2)}%)`);
       return { approved: false, reason: this.haltReason! };
@@ -73,7 +73,7 @@ export class RiskManager {
     // ── Guardrail 4: minimum holding period ──────────────────────────────
     const minHoldMs = config.risk.minHoldCandles * config.hmm.slowCandleResolutionMinutes * 60 * 1000;
     const openPosition = alreadyLong;
-    if (signal.type === SignalType.Sell && openPosition && Date.now() - openPosition.openedAt < minHoldMs) {
+    if (signal.type === SignalType.Sell && openPosition && openPosition.unrealisedPnl >= 0 && Date.now() - openPosition.openedAt < minHoldMs) {
       const heldMins = Math.round((Date.now() - openPosition.openedAt) / 60_000);
       const minMins = config.risk.minHoldCandles * config.hmm.slowCandleResolutionMinutes;
       return { approved: false, reason: `Min hold period not met for ${signal.asset} (${heldMins}m < ${minMins}m)` };
@@ -81,18 +81,18 @@ export class RiskManager {
 
     // ── Guardrail 5: position sizing ─────────────────────────────────────
     const paperPortfolio = this.paperPortfolioRef?.();
-    const maxAUD = ((paperPortfolio?.totalValueAUD ?? portfolio.totalValueAUD) * config.risk.maxPositionSizePct) / 100;
-    const availableAUD = Math.min(paperPortfolio?.cashAUD ?? portfolio.cashAUD, maxAUD);
+    const maxPosition = ((paperPortfolio?.totalValue ?? portfolio.totalValue) * config.risk.maxPositionSizePct) / 100;
+    const available = Math.min(paperPortfolio?.cash ?? portfolio.cash, maxPosition);
 
-    if (availableAUD < 10) {
-      return { approved: false, reason: "Insufficient AUD balance for minimum position" };
+    if (available < 10) {
+      return { approved: false, reason: "Insufficient balance for minimum position" };
     }
 
     // ── Guardrail 6: sector exposure cap ─────────────────────────────────
     if (signal.type === SignalType.Buy) {
       const currentExposure = positions.reduce((sum, p) => sum + p.currentPrice * p.quantity, 0);
-      const totalValue = paperPortfolio?.totalValueAUD ?? portfolio.totalValueAUD;
-      const projectedExposurePct = ((currentExposure + availableAUD) / totalValue) * 100;
+      const totalValue = paperPortfolio?.totalValue ?? portfolio.totalValue;
+      const projectedExposurePct = ((currentExposure + available) / totalValue) * 100;
       if (projectedExposurePct > config.risk.maxSectorExposurePct) {
         return {
           approved: false,
@@ -101,7 +101,7 @@ export class RiskManager {
       }
     }
 
-    const quantity = availableAUD / signal.price;
+    const quantity = available / signal.price;
 
     return {
       approved: true,
@@ -119,8 +119,8 @@ export class RiskManager {
   getMetrics(): RiskMetrics {
     const portfolio = this.portfolioRef();
     return {
-      dailyPnlAUD: portfolio.totalValueAUD - this.dailyStartValueAUD,
-      dailyPnlPct: this.dailyPnlPct(portfolio.totalValueAUD),
+      dailyPnl: portfolio.totalValue - this.dailyStartValue,
+      dailyPnlPct: this.dailyPnlPct(portfolio.totalValue),
       drawdownFromPeakPct: this.drawdownPct(portfolio),
       isHalted: this.halted,
       haltReason: this.haltReason,
@@ -139,13 +139,26 @@ export class RiskManager {
   }
 
   private dailyPnlPct(currentValue: number): number {
-    if (this.dailyStartValueAUD === 0) return 0;
-    return ((currentValue - this.dailyStartValueAUD) / this.dailyStartValueAUD) * 100;
+    if (this.dailyStartValue === 0) return 0;
+    return ((currentValue - this.dailyStartValue) / this.dailyStartValue) * 100;
   }
 
   private drawdownPct(portfolio: Portfolio): number {
-    if (portfolio.peakValueAUD === 0) return 0;
-    return ((portfolio.peakValueAUD - portfolio.totalValueAUD) / portfolio.peakValueAUD) * 100;
+    if (portfolio.peakValue === 0) return 0;
+    return Math.max(0, ((portfolio.peakValue - portfolio.totalValue) / portfolio.peakValue) * 100);
+  }
+
+  checkPostExit(): void {
+    const portfolio = this.portfolioRef();
+    this.maybeResetDaily(portfolio.totalValue);
+    const dailyPnlPct = this.dailyPnlPct(portfolio.totalValue);
+    if (dailyPnlPct <= -config.risk.maxDailyLossPct) {
+      this.halt(`Daily loss limit reached post-exit (${dailyPnlPct.toFixed(2)}%)`);
+    }
+    const drawdownPct = this.drawdownPct(portfolio);
+    if (drawdownPct >= config.risk.maxDrawdownPct) {
+      this.halt(`Max drawdown reached post-exit (${drawdownPct.toFixed(2)}%)`);
+    }
   }
 
   private halt(reason: string): void {

@@ -41,4 +41,7 @@ export interface IBroker {
   ): Promise<() => void>; // returns unsubscribe fn
 
   disconnect(): Promise<void>;
+
+  /** Dynamically switch paper/live mode. Only brokers that support it need implement this. */
+  setBrokerPaper?(brokerName: string, paper: boolean): void;
 }

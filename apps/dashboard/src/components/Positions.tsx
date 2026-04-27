@@ -7,7 +7,7 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 
 interface PositionsProps {
   portfolio: Portfolio;
-  paperMode: boolean;
+  paperModes: Record<string, boolean>;
 }
 
 function PositionCard({ pos }: { pos: Position }) {
@@ -58,7 +58,7 @@ function PositionGroup({ label, positions }: { label: string; positions: Positio
   );
 }
 
-export function Positions({ portfolio, paperMode }: PositionsProps) {
+export function Positions({ portfolio, paperModes }: PositionsProps) {
   const hasBrokers = portfolio.brokers && portfolio.brokers.length > 0;
 
   if (hasBrokers) {
@@ -67,7 +67,7 @@ export function Positions({ portfolio, paperMode }: PositionsProps) {
         <span className="text-xs font-medium text-muted-foreground">Open Positions</span>
         <div className="mt-3 flex flex-col gap-4">
           {portfolio.brokers!.map((broker, i) => {
-            const positions = paperMode && broker.paper
+            const positions = (paperModes[broker.name] ?? false) && broker.paper
               ? broker.paper.positions
               : broker.positions;
             return (
@@ -83,7 +83,8 @@ export function Positions({ portfolio, paperMode }: PositionsProps) {
   }
 
   // Single broker fallback
-  const positions = paperMode && portfolio.paper ? portfolio.paper.positions : portfolio.positions;
+  const anyPaper = Object.values(paperModes).some(Boolean);
+  const positions = anyPaper && portfolio.paper ? portfolio.paper.positions : portfolio.positions;
   return (
     <div className="rounded-lg border border-border bg-card p-3">
       <div className="flex items-center justify-between mb-3">

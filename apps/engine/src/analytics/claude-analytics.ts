@@ -52,7 +52,7 @@ Reason: ${signal.reason}
 15m regime: ${signal.regime} | 1h regime: ${slowRegime.regime} (${(slowRegime.confidence * 100).toFixed(0)}% confidence)
 RSI: ${signal.rsi.toFixed(1)} | Price: $${signal.price.toFixed(2)}
 Other assets: ${others || "none"}
-Portfolio: $${portfolio.totalValueAUD.toFixed(2)} | Open positions: ${portfolio.positions.length}
+Portfolio: $${portfolio.totalValue.toFixed(2)} | Open positions: ${portfolio.positions.length}
 
 Respond with JSON only: {"approved": true/false, "confidence": "high"/"medium"/"low", "reasoning": "one sentence"}`;
 
@@ -95,7 +95,7 @@ Respond with JSON only: {"approved": true/false, "confidence": "high"/"medium"/"
       .map(([asset, r]) => `${asset}: 15m=${r.fast.regime}(${(r.fast.confidence * 100).toFixed(0)}%) 1h=${r.slow.regime}(${(r.slow.confidence * 100).toFixed(0)}%)`)
       .join("\n");
 
-    const prompt = `Market snapshot:\n${regimeSummary}\n\nPortfolio: $${portfolio.totalValueAUD.toFixed(2)} (realised PnL: $${portfolio.realisedPnlAUD.toFixed(2)})\nPositions: ${portfolio.positions.map((p) => `${p.asset}@$${p.entryPrice.toFixed(2)}`).join(", ") || "none"}\n\nGive a 2-sentence market overview.`;
+    const prompt = `Market snapshot:\n${regimeSummary}\n\nPortfolio: $${portfolio.totalValue.toFixed(2)} (realised PnL: $${portfolio.realisedPnl.toFixed(2)})\nPositions: ${portfolio.positions.map((p) => `${p.asset}@$${p.entryPrice.toFixed(2)}`).join(", ") || "none"}\n\nGive a 2-sentence market overview.`;
 
     try {
       const stream = this.client.messages.stream({

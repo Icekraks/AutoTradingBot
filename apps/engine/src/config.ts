@@ -62,7 +62,11 @@ export const config = {
     minHoldCandles: Number(getEnv("MIN_HOLD_CANDLES", "3")),
     trailingBreakevenPct: Number(getEnv("TRAILING_BREAKEVEN_PCT", "1")),
     trailingStopPct: Number(getEnv("TRAILING_STOP_PCT", "1.5")),
+    trailingStopPctCrypto: Number(getEnv("TRAILING_STOP_PCT_CRYPTO", "2.5")),
     maxSectorExposurePct: Number(getEnv("MAX_SECTOR_EXPOSURE_PCT", "15")),
+    rsiExit: Number(getEnv("RSI_EXIT", "75")),
+    rsiBuybackThreshold: Number(getEnv("RSI_BUYBACK_THRESHOLD", "65")),
+    cryptoFeePct: Number(getEnv("CRYPTO_FEE_PCT", "0.6")),
   },
 
   server: {

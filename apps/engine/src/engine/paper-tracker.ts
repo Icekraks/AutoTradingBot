@@ -3,16 +3,18 @@ import { OrderSide } from "@trading-bot/shared";
 import { config } from "../config.js";
 
 export class PaperTracker {
-  private startingAUD: number;
-  private cashAUD: number;
+  private starting: number;
+  private cash: number;
   private positions: Map<Asset, Position> = new Map();
-  private realisedPnlAUD = 0;
+  private realisedPnl = 0;
   private readonly brokerName: string;
+  private readonly feeRatePct: number;
 
-  constructor(startingAUD: number, brokerName = "Crypto") {
-    this.startingAUD = startingAUD;
-    this.cashAUD = startingAUD;
+  constructor(starting: number, brokerName = "Crypto", feeRatePct = 0) {
+    this.starting = starting;
+    this.cash = starting;
     this.brokerName = brokerName;
+    this.feeRatePct = feeRatePct;
   }
 
   onOrderFilled(order: Order, currentPrice: number): void {
@@ -25,9 +27,10 @@ export class PaperTracker {
 
   private openPosition(order: Order, price: number): void {
     const cost = order.quantity * price;
-    if (cost > this.cashAUD) return; // insufficient paper cash
+    const fee = cost * (this.feeRatePct / 100);
+    if (cost + fee > this.cash) return; // insufficient paper cash
 
-    this.cashAUD -= cost;
+    this.cash -= cost + fee;
 
     const stopLoss = price * (1 - config.risk.stopLossPct / 100);
     const takeProfit = price * (1 + config.risk.takeProfitPct / 100);
@@ -53,9 +56,10 @@ export class PaperTracker {
     if (!pos) return;
 
     const proceeds = order.quantity * price;
+    const fee = proceeds * (this.feeRatePct / 100);
     const cost = order.quantity * pos.entryPrice;
-    this.realisedPnlAUD += proceeds - cost;
-    this.cashAUD += proceeds;
+    this.realisedPnl += proceeds - fee - cost;
+    this.cash += proceeds - fee;
     this.positions.delete(order.asset);
   }
 
@@ -66,12 +70,15 @@ export class PaperTracker {
       const unrealisedPnl = (price - pos.entryPrice) * pos.quantity;
       const unrealisedPnlPct = ((price - pos.entryPrice) / pos.entryPrice) * 100;
 
+      const trailingStopPct = this.brokerName === "Stocks"
+        ? config.risk.trailingStopPct
+        : config.risk.trailingStopPctCrypto;
       let stopLoss = pos.stopLoss;
       if (unrealisedPnlPct >= config.risk.trailingBreakevenPct) {
         stopLoss = Math.max(stopLoss, pos.entryPrice);
       }
-      if (unrealisedPnlPct >= config.risk.trailingBreakevenPct + config.risk.trailingStopPct) {
-        stopLoss = Math.max(stopLoss, price * (1 - config.risk.trailingStopPct / 100));
+      if (unrealisedPnlPct >= config.risk.trailingBreakevenPct + trailingStopPct) {
+        stopLoss = Math.max(stopLoss, price * (1 - trailingStopPct / 100));
       }
 
       this.positions.set(asset, { ...pos, currentPrice: price, unrealisedPnl, unrealisedPnlPct, stopLoss });
@@ -97,16 +104,16 @@ export class PaperTracker {
 
   getPortfolio(): PaperPortfolio {
     const positions = Array.from(this.positions.values());
-    const unrealisedPnlAUD = positions.reduce((sum, p) => sum + p.unrealisedPnl, 0);
-    const positionsValueAUD = positions.reduce((sum, p) => sum + p.currentPrice * p.quantity, 0);
+    const unrealisedPnl = positions.reduce((sum, p) => sum + p.unrealisedPnl, 0);
+    const positionsValue = positions.reduce((sum, p) => sum + p.currentPrice * p.quantity, 0);
 
     return {
-      startingAUD: this.startingAUD,
-      cashAUD: this.cashAUD,
+      starting: this.starting,
+      cash: this.cash,
       positions,
-      realisedPnlAUD: this.realisedPnlAUD,
-      unrealisedPnlAUD,
-      totalValueAUD: this.cashAUD + positionsValueAUD,
+      realisedPnl: this.realisedPnl,
+      unrealisedPnl,
+      totalValue: this.cash + positionsValue,
     };
   }
 
@@ -114,27 +121,28 @@ export class PaperTracker {
     return this.positions.has(asset);
   }
 
-  reset(startingAUD: number): void {
-    this.startingAUD = startingAUD;
-    this.cashAUD = startingAUD;
+  reset(starting: number): void {
+    this.starting = starting;
+    this.cash = starting;
     this.positions.clear();
-    this.realisedPnlAUD = 0;
+    this.realisedPnl = 0;
   }
 
   serialise() {
     return {
-      startingAUD: this.startingAUD,
-      cashAUD: this.cashAUD,
-      realisedPnlAUD: this.realisedPnlAUD,
+      starting: this.starting,
+      cash: this.cash,
+      realisedPnl: this.realisedPnl,
       positions: Array.from(this.positions.values()),
     };
   }
 
-  restore(data: ReturnType<PaperTracker["serialise"]>): void {
-    this.startingAUD = data.startingAUD;
-    this.cashAUD = data.cashAUD;
-    this.realisedPnlAUD = data.realisedPnlAUD;
-    this.positions = new Map(data.positions.map((p) => [p.asset, p]));
-    console.log(`[PaperTracker:${this.brokerName}] Restored — cash=$${this.cashAUD.toFixed(2)}, positions=${this.positions.size}`);
+  restore(data: ReturnType<PaperTracker["serialise"]> & Record<string, unknown>): void {
+    // Support both new names and old AUD-suffixed names from state files written before the rename
+    this.starting = (data.starting ?? (data.startingAUD as number)) || 0;
+    this.cash = (data.cash ?? (data.cashAUD as number)) || this.starting;
+    this.realisedPnl = (data.realisedPnl ?? (data.realisedPnlAUD as number)) || 0;
+    this.positions = new Map((data.positions as Position[]).map((p) => [p.asset, p]));
+    console.log(`[PaperTracker:${this.brokerName}] Restored — cash=$${this.cash.toFixed(2)}, positions=${this.positions.size}`);
   }
 }

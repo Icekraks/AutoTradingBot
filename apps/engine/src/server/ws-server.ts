@@ -50,7 +50,7 @@ export function startWSServer(engine: TradingEngine): http.Server {
           ws.send(makeMessage(WSMessageType.RiskUpdate, { riskMetrics: event.metrics, brokerMetrics: event.brokerMetrics }));
           break;
         case "mode":
-          ws.send(makeMessage(WSMessageType.ModeChange, { paperMode: event.paperMode }));
+          ws.send(makeMessage(WSMessageType.ModeChange, { broker: event.broker, paperMode: event.paperMode }));
           break;
       }
     });
@@ -60,8 +60,8 @@ export function startWSServer(engine: TradingEngine): http.Server {
       try {
         const msg = JSON.parse(data.toString()) as WSMessage;
         if (msg.type === WSMessageType.SetMode) {
-          const { paperMode } = msg.payload as SetModePayload;
-          engine.setMode(paperMode);
+          const { broker, paperMode } = msg.payload as SetModePayload;
+          engine.setMode(broker, paperMode);
         }
       } catch (err) {
         console.warn("[WSServer] Invalid message:", err);

@@ -27,7 +27,7 @@ async function main() {
 
     const result = await backtester.run(asset, candles);
 
-    console.log(`Total return:   ${result.totalReturnPct.toFixed(2)}% ($${result.totalReturn.toFixed(2)} AUD)`);
+    console.log(`Total return:   ${result.totalReturnPct.toFixed(2)}% ($${result.totalReturn.toFixed(2)})`);
     console.log(`Sharpe ratio:   ${result.sharpeRatio.toFixed(3)}`);
     console.log(`Max drawdown:   ${result.maxDrawdownPct.toFixed(2)}%`);
     console.log(`Trades:         ${result.numTrades}`);

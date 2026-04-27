@@ -15,8 +15,9 @@ import type {
 import { WSMessageType, MarketRegime } from "@trading-bot/shared";
 
 export interface TradingState {
-  paperMode: boolean;
+  paperModes: Record<string, boolean>;
   assets: Asset[];
+  brokerAssets: Record<string, Asset[]>;
   portfolio: Portfolio;
   riskMetrics: RiskMetrics;
   brokerMetrics?: BrokerRiskMetrics[];
@@ -57,17 +58,23 @@ export function useTradingSocket(wsUrl: string) {
     switch (msg.type) {
       case WSMessageType.Snapshot: {
         const snap = msg.payload as SnapshotPayload;
+        const slicedCandles = Object.fromEntries(
+          snap.assets.map((a) => [a, (snap.candles?.[a] ?? (snap.latestCandles[a] ? [snap.latestCandles[a]] : [])).slice(-MAX_CANDLE_HISTORY)])
+        ) as Record<Asset, Candle[]>;
+        // Slice regime sequences to the same length as candles so regimes[i] aligns with candles[i]
+        const slicedRegimes = Object.fromEntries(
+          snap.assets.map((a) => [a, (snap.regimeSequences?.[a] ?? []).slice(-slicedCandles[a].length)])
+        ) as Record<Asset, MarketRegime[]>;
         setState({
-          paperMode: snap.paperMode,
+          paperModes: snap.paperModes,
           assets: snap.assets,
+          brokerAssets: snap.brokerAssets ?? {},
           portfolio: snap.portfolio,
           riskMetrics: snap.riskMetrics,
           brokerMetrics: snap.brokerMetrics,
           regimes: snap.regimes,
-          regimeSequences: (snap.regimeSequences ?? {}) as Record<Asset, MarketRegime[]>,
-          candles: Object.fromEntries(
-            snap.assets.map((a) => [a, (snap.candles?.[a] ?? (snap.latestCandles[a] ? [snap.latestCandles[a]] : [])).slice(-MAX_CANDLE_HISTORY)])
-          ) as Record<Asset, Candle[]>,
+          regimeSequences: slicedRegimes,
+          candles: slicedCandles,
           latestCandles: snap.latestCandles,
           recentTrades: snap.recentTrades,
         });
@@ -127,15 +134,20 @@ export function useTradingSocket(wsUrl: string) {
         break;
       }
 
-      case WSMessageType.ModeChange:
-        setState((prev) => prev ? { ...prev, paperMode: (msg.payload as { paperMode: boolean }).paperMode } : prev);
+      case WSMessageType.ModeChange: {
+        const { broker, paperMode } = msg.payload as { broker: string; paperMode: boolean };
+        setState((prev) => prev ? {
+          ...prev,
+          paperModes: { ...prev.paperModes, [broker]: paperMode },
+        } : prev);
         break;
+      }
     }
   }
 
-  const setMode = useCallback((paperMode: boolean) => {
+  const setMode = useCallback((broker: string, paperMode: boolean) => {
     wsRef.current?.send(
-      JSON.stringify({ type: WSMessageType.SetMode, payload: { paperMode }, timestamp: Date.now() })
+      JSON.stringify({ type: WSMessageType.SetMode, payload: { broker, paperMode }, timestamp: Date.now() })
     );
   }, []);
 

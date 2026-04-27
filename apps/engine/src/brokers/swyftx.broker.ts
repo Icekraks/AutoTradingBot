@@ -122,15 +122,15 @@ export class SwyftxBroker implements IBroker {
     const res = await this.http.get<SwyftxBalance[]>("/user/balance/");
     const quoteId = this.assetIdMap.get(config.trading.quoteAsset);
     const quoteBalance = res.data.find((b) => b.assetId === quoteId);
-    const cashAUD = quoteBalance ? Number(quoteBalance.availableBalance) : 0;
+    const balance = quoteBalance ? Number(quoteBalance.availableBalance) : 0;
 
     return {
-      totalValueAUD: cashAUD,
-      cashAUD,
+      totalValue: balance,
+      cash: balance,
       positions: [],
-      realisedPnlAUD: 0,
-      unrealisedPnlAUD: 0,
-      peakValueAUD: cashAUD,
+      realisedPnl: 0,
+      unrealisedPnl: 0,
+      peakValue: balance,
       updatedAt: Date.now(),
     };
   }
@@ -158,20 +158,29 @@ export class SwyftxBroker implements IBroker {
       return order;
     }
 
-    const res = await this.http.post<{ orderId: string }>(
-      "/orders/",
-      {
-      primary: params.asset,
-      secondary: params.quoteAsset,
-      quantity: params.quantity,
-      orderType: params.type === OrderType.Market ? "MARKET" : "LIMIT",
-      side: params.side,
-      ...(params.limitPrice && { limitPrice: params.limitPrice }),
-      },
-      { headers: { "Content-Type": "application/json" } }
-    );
+    const isBuy = params.side === OrderSide.Buy;
 
-    order.id = res.data.orderId;
+    // Swyftx convention: primary = quote currency (USD), secondary = traded asset (BTC).
+    // quantity is always denominated in the secondary (base) asset.
+    // orderType encodes direction — "INSTANT_BUY" / "INSTANT_SELL" for market orders.
+    const [res, fillPrice] = await Promise.all([
+      this.http.post<SwyftxOrderResponse>(
+        "/orders/",
+        {
+          primary: params.quoteAsset,        // e.g. "USD"
+          secondary: params.asset,            // e.g. "BTC"
+          quantity: String(params.quantity),  // base asset amount, as string
+          assetQuantity: params.asset,        // quantity is in secondary (base asset)
+          orderType: isBuy ? "INSTANT_BUY" : "INSTANT_SELL",
+          ...(params.limitPrice && { trigger: String(params.limitPrice) }),
+        },
+        { headers: { "Content-Type": "application/json" } }
+      ),
+      this.getPrice(params.asset, params.quoteAsset).catch(() => 0),
+    ]);
+
+    order.id = res.data.orderUuid;
+    order.price = params.limitPrice ?? fillPrice;
     order.status = OrderStatus.Filled;
     order.filledAt = Date.now();
     return order;
@@ -235,6 +244,12 @@ export class SwyftxBroker implements IBroker {
       closed = true;
       ws?.close();
     };
+  }
+
+  setBrokerPaper(_brokerName: string, paper: boolean): void {
+    if (this.paperMode === paper) return;
+    this.paperMode = paper;
+    console.log(`[Swyftx] Switched to ${paper ? "paper" : "live"} mode`);
   }
 
   async disconnect(): Promise<void> {

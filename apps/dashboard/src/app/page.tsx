@@ -27,31 +27,40 @@ export default function Page() {
     );
   }
 
-  const assets = state.assets ?? ["BTC", "ETH"];
+  const brokerAssets = state.brokerAssets ?? {};
+  const brokerGroups = Object.entries(brokerAssets).filter(([, assets]) => assets.length > 0);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <Header
         portfolio={state.portfolio}
-        paperMode={state.paperMode}
+        paperModes={state.paperModes}
         connected={connected}
         onToggleMode={setMode}
       />
 
-      {/* Asset tabs */}
-      <div className="flex gap-1 px-4 pt-3 shrink-0">
-        {assets.map((asset) => (
-          <button
-            key={asset}
-            onClick={() => setSelectedAsset(asset)}
-            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-              selectedAsset === asset
-                ? "bg-primary text-primary-foreground"
-                : "bg-card text-muted-foreground hover:text-foreground border border-border"
-            }`}
-          >
-            {asset}/{QUOTE_ASSET}
-          </button>
+      {/* Asset tabs grouped by broker */}
+      <div className="flex items-center gap-4 px-4 pt-3 shrink-0">
+        {brokerGroups.map(([brokerName, assets], gi) => (
+          <div key={brokerName} className="flex items-center gap-2">
+            {gi > 0 && <div className="w-px h-5 bg-border" />}
+            <span className="text-xs text-muted-foreground font-medium">{brokerName}</span>
+            <div className="flex gap-1">
+              {assets.map((asset) => (
+                <button
+                  key={asset}
+                  onClick={() => setSelectedAsset(asset)}
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                    selectedAsset === asset
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-card text-muted-foreground hover:text-foreground border border-border"
+                  }`}
+                >
+                  {asset}/{QUOTE_ASSET}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
@@ -73,7 +82,7 @@ export default function Page() {
         {/* Right sidebar */}
         <div className="flex flex-col gap-3 w-72 overflow-y-auto shrink-0 min-h-0">
           <RiskGauges metrics={state.riskMetrics} brokerMetrics={state.brokerMetrics} />
-          <Positions portfolio={state.portfolio} paperMode={state.paperMode} />
+          <Positions portfolio={state.portfolio} paperModes={state.paperModes} />
           <TradeLog trades={state.recentTrades ?? []} />
         </div>
       </div>

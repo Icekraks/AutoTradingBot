@@ -8,28 +8,38 @@ import { config } from "../config.js";
 export class AlpacaBroker implements IBroker {
   private http!: AxiosInstance;   // trading (account, orders, positions)
   private dataHttp!: AxiosInstance; // market data (bars, trades)
-  private readonly paper: boolean;
+  private paper: boolean;
+  private authHeaders!: Record<string, string>;
 
   constructor(paper = true) {
     this.paper = paper;
   }
 
   async connect(): Promise<void> {
-    const tradingBaseURL = this.paper
-      ? "https://paper-api.alpaca.markets/v2"
-      : "https://api.alpaca.markets/v2";
-
-    const headers = {
+    this.authHeaders = {
       "APCA-API-KEY-ID": config.alpaca.apiKey,
       "APCA-API-SECRET-KEY": config.alpaca.apiSecret,
       "Accept": "application/json",
     };
-
-    this.http = axios.create({ baseURL: tradingBaseURL, headers });
-    this.dataHttp = axios.create({ baseURL: "https://data.alpaca.markets/v2", headers });
+    this.rebuildHttp();
+    this.dataHttp = axios.create({ baseURL: "https://data.alpaca.markets/v2", headers: this.authHeaders });
 
     const res = await this.http.get<AlpacaAccount>("/account");
     console.log(`[Alpaca] Connected — paper=${this.paper}, equity=$${Number(res.data.equity).toFixed(2)}`);
+  }
+
+  setBrokerPaper(_brokerName: string, paper: boolean): void {
+    if (this.paper === paper) return;
+    this.paper = paper;
+    this.rebuildHttp();
+    console.log(`[Alpaca] Switched to ${paper ? "paper" : "live"} mode`);
+  }
+
+  private rebuildHttp(): void {
+    const baseURL = this.paper
+      ? "https://paper-api.alpaca.markets/v2"
+      : "https://api.alpaca.markets/v2";
+    this.http = axios.create({ baseURL, headers: this.authHeaders });
   }
 
   async getCandles(
@@ -98,12 +108,12 @@ export class AlpacaBroker implements IBroker {
     }));
 
     return {
-      totalValueAUD: equity,
-      cashAUD: cash,
+      totalValue: equity,
+      cash,
       positions,
-      realisedPnlAUD: 0,
-      unrealisedPnlAUD: positions.reduce((s, p) => s + p.unrealisedPnl, 0),
-      peakValueAUD: equity,
+      realisedPnl: 0,
+      unrealisedPnl: positions.reduce((s, p) => s + p.unrealisedPnl, 0),
+      peakValue: equity,
       updatedAt: Date.now(),
     };
   }
@@ -148,11 +158,31 @@ export class AlpacaBroker implements IBroker {
       ...(extendedHours && { extended_hours: true }),
     });
 
-    order.id = res.data.id;
-    order.price = Number(res.data.filled_avg_price ?? 0);
-    order.status = res.data.status === "filled" ? OrderStatus.Filled : OrderStatus.Pending;
-    if (order.status === OrderStatus.Filled) order.filledAt = Date.now();
+    // Market orders on Alpaca are often accepted but not yet filled — poll until filled
+    const filled = res.data.status === "filled"
+      ? res.data
+      : await this.pollUntilFilled(res.data.id, 30_000);
+
+    order.id = filled.id;
+    order.price = Number(filled.filled_avg_price ?? 0);
+    order.status = OrderStatus.Filled;
+    order.filledAt = Date.now();
     return order;
+  }
+
+  private async pollUntilFilled(orderId: string, timeoutMs: number): Promise<AlpacaOrderResponse> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const res = await this.http.get<AlpacaOrderResponse>(`/orders/${orderId}`);
+      const { status } = res.data;
+      if (status === "filled") return res.data;
+      if (status === "canceled" || status === "expired" || status === "rejected") {
+        throw new Error(`[Alpaca] Order ${orderId} ${status}`);
+      }
+    }
+    await this.cancelOrder(orderId).catch(() => {});
+    throw new Error(`[Alpaca] Order ${orderId} fill timed out after ${timeoutMs}ms`);
   }
 
   async cancelOrder(orderId: string): Promise<void> {
@@ -171,9 +201,9 @@ export class AlpacaBroker implements IBroker {
 
     const connect = () => {
       if (closed) return;
-      // SIP feed = consolidated all-exchange data, consistent with bar prices.
-      // Paper accounts get real-time SIP for free.
-      ws = new WebSocket("wss://stream.data.alpaca.markets/v2/sip");
+      // Paper accounts only have access to IEX; live accounts with SIP subscription use SIP.
+      const feed = this.paper ? "iex" : "sip";
+      ws = new WebSocket(`wss://stream.data.alpaca.markets/v2/${feed}`);
 
       ws.on("open", () => {
         ws!.send(JSON.stringify({
@@ -187,7 +217,7 @@ export class AlpacaBroker implements IBroker {
         try {
           const msgs = JSON.parse(data.toString()) as AlpacaWSMessage[];
           for (const msg of msgs) {
-            if (msg.T === "authenticated") {
+            if (msg.T === "success" && msg.msg === "authenticated") {
               ws!.send(JSON.stringify({ action: "subscribe", trades: [asset] }));
             } else if (msg.T === "t" && msg.S === asset && msg.p != null) {
               callback(msg.p, new Date(msg.t ?? Date.now()).getTime());
@@ -303,6 +333,7 @@ interface AlpacaOrderResponse {
 
 interface AlpacaWSMessage {
   T: string;
+  msg?: string;
   S?: string;
   p?: number;
   t?: string;

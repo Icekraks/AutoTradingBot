@@ -17,8 +17,6 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
-/** @deprecated use formatCurrency */
-export const formatAUD = formatCurrency;
 
 export function formatPct(value: number, showSign = true): string {
   const sign = showSign && value > 0 ? "+" : "";
