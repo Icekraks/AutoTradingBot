@@ -15,7 +15,7 @@ const TMP_STATE_PATH = STATE_PATH + ".tmp";
 
 export type EngineEvent =
   | { type: "candle"; asset: Asset; candle: Candle }
-  | { type: "regime"; asset: Asset; regime: RegimeState }
+  | { type: "regime"; asset: Asset; regime: RegimeState; slowRegime: RegimeState }
   | { type: "order"; order: Order }
   | { type: "portfolio"; portfolio: Portfolio }
   | { type: "risk"; metrics: RiskMetrics; brokerMetrics?: { name: string; metrics: RiskMetrics }[] }
@@ -104,10 +104,12 @@ export class TradingEngine {
     await this.broker.connect();
     this.portfolio = await this.broker.getPortfolio();
 
-    const cryptoBalance = this.portfolio.brokers?.find((b) => b.name === "Crypto")?.totalValue
-      ?? (this.portfolio.totalValue > 0 ? this.portfolio.totalValue : config.trading.paperStartingBalance);
-    const stocksBalance = this.portfolio.brokers?.find((b) => b.name === "Stocks")?.totalValue
-      ?? config.alpaca.paperStartingBalance;
+    const cryptoBalance = config.trading.paperStartingBalance
+      ?? this.portfolio.brokers?.find((b) => b.name === "Crypto")?.totalValue
+      ?? (this.portfolio.totalValue > 0 ? this.portfolio.totalValue : 0);
+    const stocksBalance = config.alpaca.paperStartingBalance
+      ?? this.portfolio.brokers?.find((b) => b.name === "Stocks")?.totalValue
+      ?? 0;
 
     this.cryptoPeak = cryptoBalance;
     this.stocksPeak = stocksBalance;
@@ -337,6 +339,25 @@ export class TradingEngine {
     return minuteOfDay >= 240 && minuteOfDay < 1200; // 04:00–20:00 ET (extended hours)
   }
 
+  // Returns true during the opening volatility window after each session open.
+  // Session opens: extended hours 04:00 ET, regular session 09:30 ET.
+  private isMarketOpeningPeriod(): boolean {
+    const skip = config.risk.marketOpenSkipMinutes;
+    if (skip <= 0) return false;
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    const minuteOfDay = hour * 60 + minute;
+    const sessionOpens = [240, 570]; // 04:00 ET (extended), 09:30 ET (regular)
+    return sessionOpens.some((open) => minuteOfDay >= open && minuteOfDay < open + skip);
+  }
+
   private async processAsset(asset: Asset): Promise<void> {
     if (this.alpacaAssets.has(asset) && !this.isUSMarketOpen()) {
       console.log(`[Engine] ${asset} — US market closed, skipping`);
@@ -360,7 +381,7 @@ export class TradingEngine {
     const regime = detector.currentRegime(candles.slice(-config.hmm.regimeWindow));
     const slowRegime = slowDetector.currentRegime(slowCandles.slice(-config.hmm.slowRegimeWindow));
     this.latestRegimes.set(asset, { fast: regime, slow: slowRegime });
-    this.emit({ type: "regime", asset, regime });
+    this.emit({ type: "regime", asset, regime, slowRegime });
 
     const signal = generateSignal({
       asset,
@@ -371,6 +392,12 @@ export class TradingEngine {
     });
 
     console.log(`[Engine] ${asset} signal=${signal.type} fast=${regime.regime}(${(regime.confidence * 100).toFixed(0)}%) slow=${slowRegime.regime}(${(slowRegime.confidence * 100).toFixed(0)}%) rsi=${signal.rsi.toFixed(1)}`);
+
+    // Market open filter: skip buys during the opening volatility window
+    if (signal.type === SignalType.Buy && this.alpacaAssets.has(asset) && this.isMarketOpeningPeriod()) {
+      console.log(`[Engine] ${asset} — market opening period, suppressing buy`);
+      return;
+    }
 
     // RSI exit cooldown: after an RSI overbought exit, suppress re-entry until RSI pulls back
     if (this.rsiExitCooldown.has(asset)) {
@@ -566,13 +593,16 @@ export class TradingEngine {
 
   getSnapshot() {
     const regimes: Record<Asset, RegimeState> = {} as Record<Asset, RegimeState>;
+    const slowRegimes: Record<Asset, RegimeState> = {} as Record<Asset, RegimeState>;
     const regimeSequences: Record<Asset, MarketRegime[]> = {} as Record<Asset, MarketRegime[]>;
     const candles: Record<Asset, Candle[]> = {} as Record<Asset, Candle[]>;
     const latestCandles: Record<Asset, Candle> = {} as Record<Asset, Candle>;
 
     for (const asset of this.assets) {
       const buffer = this.candleBuffers.get(asset) ?? [];
+      const slowBuffer = this.slowCandleBuffers.get(asset) ?? [];
       const detector = this.detectors.get(asset)!;
+      const slowDetector = this.slowDetectors.get(asset)!;
 
       candles[asset] = buffer;
       if (buffer.length > 0) {
@@ -580,6 +610,9 @@ export class TradingEngine {
         if (detector.isTrained) {
           regimes[asset] = detector.currentRegime(buffer);
           regimeSequences[asset] = detector.decodeSequence(buffer);
+        }
+        if (slowDetector.isTrained && slowBuffer.length > 0) {
+          slowRegimes[asset] = slowDetector.currentRegime(slowBuffer);
         }
       }
     }
@@ -614,6 +647,7 @@ export class TradingEngine {
       riskMetrics: cryptoMetrics,
       brokerMetrics,
       regimes,
+      slowRegimes,
       regimeSequences,
       candles,
       latestCandles,

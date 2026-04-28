@@ -22,6 +22,7 @@ export interface TradingState {
   riskMetrics: RiskMetrics;
   brokerMetrics?: BrokerRiskMetrics[];
   regimes: Record<Asset, RegimeState>;
+  slowRegimes: Record<Asset, RegimeState>;
   regimeSequences: Record<Asset, MarketRegime[]>;
   candles: Record<Asset, Candle[]>;
   latestCandles: Record<Asset, Candle>;
@@ -73,6 +74,7 @@ export function useTradingSocket(wsUrl: string) {
           riskMetrics: snap.riskMetrics,
           brokerMetrics: snap.brokerMetrics,
           regimes: snap.regimes,
+          slowRegimes: snap.slowRegimes ?? {},
           regimeSequences: slicedRegimes,
           candles: slicedCandles,
           latestCandles: snap.latestCandles,
@@ -101,13 +103,14 @@ export function useTradingSocket(wsUrl: string) {
       }
 
       case WSMessageType.RegimeUpdate: {
-        const { asset, regime } = msg.payload as { asset: Asset; regime: RegimeState };
+        const { asset, regime, slowRegime } = msg.payload as { asset: Asset; regime: RegimeState; slowRegime?: RegimeState };
         setState((prev) => {
           if (!prev) return prev;
           const seq = [...(prev.regimeSequences[asset] ?? []), regime.regime].slice(-MAX_CANDLE_HISTORY);
           return {
             ...prev,
             regimes: { ...prev.regimes, [asset]: regime },
+            slowRegimes: slowRegime ? { ...prev.slowRegimes, [asset]: slowRegime } : prev.slowRegimes,
             regimeSequences: { ...prev.regimeSequences, [asset]: seq },
           };
         });

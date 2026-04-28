@@ -32,14 +32,14 @@ export const config = {
     paper: getEnv("ALPACA_PAPER", "true") === "true",
     // Assets routed to Alpaca — everything else goes to Swyftx
     assets: getEnv("ALPACA_ASSETS", "").split(",").map((a) => a.trim()).filter(Boolean),
-    paperStartingBalance: Number(getEnv("ALPACA_PAPER_STARTING_BALANCE", "1000")),
+    paperStartingBalance: process.env["ALPACA_PAPER_STARTING_BALANCE"] ? Number(process.env["ALPACA_PAPER_STARTING_BALANCE"]) : null,
   },
 
   trading: {
     paperMode: getEnv("PAPER_MODE", "true") === "true",
     assets: getEnv("ASSETS", "BTC,ETH").split(",").map((a) => a.trim()),
     quoteAsset: getEnv("QUOTE_ASSET", "AUD"),
-    paperStartingBalance: Number(getEnv("PAPER_STARTING_BALANCE", "1000")),
+    paperStartingBalance: process.env["PAPER_STARTING_BALANCE"] ? Number(process.env["PAPER_STARTING_BALANCE"]) : null,
   },
 
   hmm: {
@@ -67,6 +67,7 @@ export const config = {
     rsiExit: Number(getEnv("RSI_EXIT", "75")),
     rsiBuybackThreshold: Number(getEnv("RSI_BUYBACK_THRESHOLD", "65")),
     cryptoFeePct: Number(getEnv("CRYPTO_FEE_PCT", "0.6")),
+    marketOpenSkipMinutes: Number(getEnv("MARKET_OPEN_SKIP_MINUTES", "30")),
   },
 
   server: {

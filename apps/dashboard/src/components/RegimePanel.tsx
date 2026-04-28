@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 interface RegimePanelProps {
   asset: Asset;
   regime: RegimeState | null;
+  slowRegime: RegimeState | null;
 }
 
 const REGIME_STYLES: Record<MarketRegime, { label: string; color: string; bar: string }> = {
@@ -17,42 +18,55 @@ const REGIME_STYLES: Record<MarketRegime, { label: string; color: string; bar: s
   [MarketRegime.Sideways]: { label: "Sideways", color: "text-gray-400",  bar: "bg-gray-500"  },
 };
 
-export function RegimePanel({ asset, regime }: RegimePanelProps) {
+function RegimeRows({ regime }: { regime: RegimeState }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {(Object.entries(regime.probabilities) as [MarketRegime, number][]).map(([r, prob]) => (
+        <div key={r} className="flex items-center gap-2">
+          <span className={cn("text-xs w-16 shrink-0", REGIME_STYLES[r].color)}>
+            {REGIME_STYLES[r].label}
+          </span>
+          <Progress
+            value={Math.round(prob * 100)}
+            className="flex-1 h-1.5"
+            indicatorClassName={REGIME_STYLES[r].bar}
+          />
+          <span className="text-xs text-muted-foreground w-10 text-right">
+            {(prob * 100).toFixed(1)}%
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RegimeLabel({ regime }: { regime: RegimeState }) {
+  return (
+    <span className={cn("text-sm font-bold", REGIME_STYLES[regime.regime].color)}>
+      {regime.regime}
+      <span className="text-xs text-muted-foreground ml-1 font-normal">
+        {(regime.confidence * 100).toFixed(0)}%
+      </span>
+    </span>
+  );
+}
+
+export function RegimePanel({ asset, regime, slowRegime }: RegimePanelProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-3 shrink-0">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-medium text-muted-foreground">HMM Regime — {asset}</span>
-        {regime && (
-          <span className={cn("text-sm font-bold", REGIME_STYLES[regime.regime].color)}>
-            {regime.regime}
-            <span className="text-xs text-muted-foreground ml-1 font-normal">
-              {(regime.confidence * 100).toFixed(0)}% confidence
-            </span>
-          </span>
-        )}
+      {/* Fast 15m */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-muted-foreground">15m — {asset}</span>
+        {regime ? <RegimeLabel regime={regime} /> : <span className="text-xs text-muted-foreground">Training…</span>}
       </div>
+      {regime ? <RegimeRows regime={regime} /> : null}
 
-      {regime ? (
-        <div className="flex flex-col gap-2">
-          {(Object.entries(regime.probabilities) as [MarketRegime, number][]).map(([r, prob]) => (
-            <div key={r} className="flex items-center gap-2">
-              <span className={cn("text-xs w-16 shrink-0", REGIME_STYLES[r].color)}>
-                {REGIME_STYLES[r].label}
-              </span>
-              <Progress
-                value={Math.round(prob * 100)}
-                className="flex-1 h-1.5"
-                indicatorClassName={REGIME_STYLES[r].bar}
-              />
-              <span className="text-xs text-muted-foreground w-10 text-right">
-                {(prob * 100).toFixed(1)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">Training HMM...</p>
-      )}
+      {/* Slow 1h */}
+      <div className="flex items-center justify-between mt-3 mb-2">
+        <span className="text-xs font-medium text-muted-foreground">1h — {asset}</span>
+        {slowRegime ? <RegimeLabel regime={slowRegime} /> : <span className="text-xs text-muted-foreground">Training…</span>}
+      </div>
+      {slowRegime ? <RegimeRows regime={slowRegime} /> : null}
     </div>
   );
 }

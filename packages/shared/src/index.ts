@@ -178,6 +178,7 @@ export interface SnapshotPayload {
   riskMetrics: RiskMetrics;
   brokerMetrics?: BrokerRiskMetrics[];
   regimes: Record<Asset, RegimeState>;
+  slowRegimes: Record<Asset, RegimeState>;
   regimeSequences: Record<Asset, MarketRegime[]>;
   candles: Record<Asset, Candle[]>;
   latestCandles: Record<Asset, Candle>;

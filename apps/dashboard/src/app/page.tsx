@@ -76,6 +76,7 @@ export default function Page() {
           <RegimePanel
             asset={selectedAsset}
             regime={state.regimes?.[selectedAsset] ?? null}
+            slowRegime={state.slowRegimes?.[selectedAsset] ?? null}
           />
         </div>
 

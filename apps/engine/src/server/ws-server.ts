@@ -38,7 +38,7 @@ export function startWSServer(engine: TradingEngine): http.Server {
           ws.send(makeMessage(WSMessageType.CandleUpdate, { asset: event.asset, candle: event.candle }));
           break;
         case "regime":
-          ws.send(makeMessage(WSMessageType.RegimeUpdate, { asset: event.asset, regime: event.regime }));
+          ws.send(makeMessage(WSMessageType.RegimeUpdate, { asset: event.asset, regime: event.regime, slowRegime: event.slowRegime }));
           break;
         case "order":
           ws.send(makeMessage(WSMessageType.OrderUpdate, { order: event.order }));
