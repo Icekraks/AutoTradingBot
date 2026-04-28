@@ -266,7 +266,7 @@ export class AlpacaBroker implements IBroker {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const RETRYABLE = new Set(["ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "ERR_NETWORK"]);
+const RETRYABLE = new Set(["ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "ERR_NETWORK", "ENOTFOUND", "EAI_AGAIN"]);
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 2000): Promise<T> {
   for (let i = 0; i < attempts; i++) {

@@ -264,21 +264,20 @@ export class TradingEngine {
 
     this.portfolio = await this.broker.getPortfolio();
     this.updatePeaks();
+    this.emitRisk();
 
-    // Candle-based stop-loss/take-profit (uses previous tick's completed candle)
+    // Fetch fresh candles and evaluate signals for every asset
+    for (const asset of this.assets) {
+      await this.processAsset(asset);
+    }
+
+    // Candle-based stop-loss/take-profit — runs after fresh candles are loaded
     for (const asset of this.assets) {
       const buffer = this.candleBuffers.get(asset) ?? [];
       if (buffer.length === 0) continue;
       const latest = buffer[buffer.length - 1];
       const fillPrice = this.paperTrackerFor(asset).checkCandleTrigger(asset, latest.low, latest.high);
       if (fillPrice !== null) this.triggerPaperExit(asset, fillPrice);
-    }
-
-    this.emitRisk();
-
-    // Fetch fresh candles and evaluate signals for every asset
-    for (const asset of this.assets) {
-      await this.processAsset(asset);
     }
 
     // Re-price paper positions from the freshly-fetched candle closes, then emit

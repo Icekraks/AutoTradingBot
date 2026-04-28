@@ -41,7 +41,8 @@ async function main() {
 // The per-call withRetry already handles retries; this catches anything that
 // still leaks through (e.g. mid-tick ECONNRESET on a non-retried path).
 process.on("unhandledRejection", (reason) => {
-  console.error("[Main] Unhandled rejection (engine continues):", reason);
+  const msg = reason instanceof Error ? `${reason.message}` : String(reason);
+  console.error("[Main] Unhandled rejection (engine continues):", msg);
 });
 
 main().catch((err) => {
