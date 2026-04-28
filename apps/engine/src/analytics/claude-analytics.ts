@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Asset, PaperPortfolio, RegimeState, TradeSignal } from "@trading-bot/shared";
+import type { SignalValidation } from "./analytics.types.js";
+
+export type { SignalValidation };
 
 const SYSTEM_PROMPT = `You are a crypto trading signal validator embedded in an automated trading bot.
 The bot uses a Hidden Markov Model (HMM) to detect Bull/Bear/Sideways regimes on 15-minute and 1-hour candles.
@@ -10,12 +13,6 @@ When validating signals:
 - Strong signals have both 15m and 1h regimes aligned
 - Multiple assets in the same regime simultaneously can indicate false signals (correlated noise)
 - Be concise and data-focused`;
-
-export interface SignalValidation {
-  approved: boolean;
-  confidence: "high" | "medium" | "low";
-  reasoning: string;
-}
 
 export class ClaudeAnalytics {
   private client: Anthropic | null = null;

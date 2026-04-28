@@ -1,6 +1,6 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Asset, Candle, Order, PaperPortfolio, Portfolio, RegimeState, RiskMetrics } from "@trading-bot/shared";
+import type { Asset, Candle, Order, PaperPortfolio, Portfolio, RegimeState } from "@trading-bot/shared";
 import { MarketRegime, OrderSide, OrderStatus, OrderType, SignalType } from "@trading-bot/shared";
 import type { IBroker } from "../brokers/broker.interface.js";
 import { RegimeDetector } from "../hmm/regime.js";
@@ -9,19 +9,12 @@ import { RiskManager } from "../guardrails/risk-manager.js";
 import { PaperTracker } from "./paper-tracker.js";
 import { ClaudeAnalytics } from "../analytics/claude-analytics.js";
 import { config } from "../config.js";
+import type { EngineEvent, EngineEventHandler } from "./engine.types.js";
+
+export type { EngineEvent, EngineEventHandler };
 
 const STATE_PATH = resolve(process.cwd(), "trading-state.json");
 const TMP_STATE_PATH = STATE_PATH + ".tmp";
-
-export type EngineEvent =
-  | { type: "candle"; asset: Asset; candle: Candle }
-  | { type: "regime"; asset: Asset; regime: RegimeState; slowRegime: RegimeState }
-  | { type: "order"; order: Order }
-  | { type: "portfolio"; portfolio: Portfolio }
-  | { type: "risk"; metrics: RiskMetrics; brokerMetrics?: { name: string; metrics: RiskMetrics }[] }
-  | { type: "mode"; broker: string; paperMode: boolean };
-
-export type EngineEventHandler = (event: EngineEvent) => void;
 
 export class TradingEngine {
   private broker: IBroker;

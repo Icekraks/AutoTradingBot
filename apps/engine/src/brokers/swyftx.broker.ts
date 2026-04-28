@@ -8,6 +8,7 @@ import WebSocket from "ws";
 import type { Asset, Candle, Order, Portfolio } from "@trading-bot/shared";
 import { OrderSide, OrderStatus, OrderType } from "@trading-bot/shared";
 import type { IBroker, PlaceOrderParams } from "./broker.interface.js";
+import type { KrakenOHLCRow, KrakenOHLCResponse, KrakenWSTicker, SwyftxAsset, SwyftxBalance, SwyftxOrderResponse, SwyftxTickerResponse } from "./swyftx.types.js";
 import { config } from "../config.js";
 
 export class SwyftxBroker implements IBroker {
@@ -283,37 +284,3 @@ const KRAKEN_WS_SYMBOL: Record<string, string> = {
   "ADA/USD": "ADA/USD",
 };
 
-// Each row: [time, open, high, low, close, vwap, volume, count]
-type KrakenOHLCRow = [number, string, string, string, string, string, string, number];
-
-interface KrakenOHLCResponse {
-  error: string[];
-  result: Record<string, KrakenOHLCRow[]>;
-}
-
-// ─── Swyftx API response shapes ──────────────────────────────────────────────
-
-interface SwyftxOrderResponse {
-  orderUuid: string;
-  processed: boolean;
-}
-
-interface SwyftxTickerResponse {
-  lastPrice: string;
-}
-
-interface SwyftxBalance {
-  assetId: number;
-  availableBalance: string;
-  stakingBalance: string;
-}
-
-interface SwyftxAsset {
-  id: number;
-  code: string;
-}
-
-interface KrakenWSTicker {
-  channel: string;
-  data: Array<{ symbol: string; last: number }>;
-}

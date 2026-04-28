@@ -5,18 +5,9 @@
  * Baum-Welch (EM) for training, Viterbi for regime decoding.
  */
 
-export interface HMMParams {
-  numStates: number;
-  numFeatures: number;
-  /** log initial state probabilities [numStates] */
-  logPi: number[];
-  /** log transition matrix [numStates][numStates] */
-  logA: number[][];
-  /** emission means [numStates][numFeatures] */
-  means: number[][];
-  /** emission variances [numStates][numFeatures] */
-  variances: number[][];
-}
+import type { HMMParams } from "./hmm.types.js";
+
+export type { HMMParams };
 
 export class HiddenMarkovModel {
   readonly numStates: number;

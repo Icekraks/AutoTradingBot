@@ -3,40 +3,9 @@ import { MarketRegime, SignalType, OrderSide } from "@trading-bot/shared";
 import { RegimeDetector } from "../hmm/regime.js";
 import { generateSignal } from "../signals/signal-generator.js";
 import { config } from "../config.js";
+import type { BacktestResult, BacktestTrade, SimPosition } from "./backtest.types.js";
 
-export interface BacktestResult {
-  asset: Asset;
-  totalReturn: number;
-  totalReturnPct: number;
-  sharpeRatio: number;
-  maxDrawdownPct: number;
-  numTrades: number;
-  winRate: number;
-  trades: BacktestTrade[];
-}
-
-export interface BacktestTrade {
-  asset: Asset;
-  side: OrderSide;
-  entryPrice: number;
-  exitPrice: number;
-  quantity: number;
-  pnl: number;
-  pnlPct: number;
-  entryTimestamp: number;
-  exitTimestamp: number;
-  entryRegime: MarketRegime;
-}
-
-interface SimPosition {
-  side: OrderSide;
-  entryPrice: number;
-  quantity: number;
-  entryTimestamp: number;
-  entryRegime: MarketRegime;
-  stopLoss: number;
-  takeProfit: number;
-}
+export type { BacktestResult, BacktestTrade };
 
 export class Backtester {
   private trainSplit = 0.7; // 70% train, 30% test

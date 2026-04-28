@@ -1,14 +1,10 @@
 import type { Portfolio, PaperPortfolio, TradeSignal, RiskMetrics } from "@trading-bot/shared";
 import { SignalType, OrderSide } from "@trading-bot/shared";
-import type { PlaceOrderParams } from "../brokers/broker.interface.js";
 import { OrderType } from "@trading-bot/shared";
 import { config } from "../config.js";
+import type { RiskDecision } from "./risk.types.js";
 
-export interface RiskDecision {
-  approved: boolean;
-  reason: string;
-  params?: PlaceOrderParams;
-}
+export type { RiskDecision };
 
 export class RiskManager {
   private dailyStartValue: number = 0;

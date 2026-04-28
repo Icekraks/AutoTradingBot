@@ -1,6 +1,8 @@
-import type { Asset, Candle, TradingPair } from "@trading-bot/shared";
+import type { TradingPair } from "@trading-bot/shared";
 import { MarketRegime, SignalType, type TradeSignal } from "@trading-bot/shared";
-import type { RegimeState } from "@trading-bot/shared";
+import type { SignalContext } from "./signal.types.js";
+
+export type { SignalContext };
 
 const RSI_PERIOD = 14;
 const RSI_OVERBOUGHT = Number(process.env.RSI_OVERBOUGHT ?? 70);
@@ -36,14 +38,6 @@ function calculateRSI(closes: number[], period = RSI_PERIOD): number {
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
   return 100 - 100 / (1 + rs);
-}
-
-export interface SignalContext {
-  asset: Asset;
-  quoteAsset: string;
-  candles: Candle[];
-  regime: RegimeState;
-  slowRegime: RegimeState;
 }
 
 export function generateSignal(ctx: SignalContext): TradeSignal {

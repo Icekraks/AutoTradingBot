@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import type { Asset, Candle, Order, Portfolio, Position } from "@trading-bot/shared";
 import { OrderSide, OrderStatus, OrderType } from "@trading-bot/shared";
 import type { IBroker, PlaceOrderParams } from "./broker.interface.js";
+import type { AlpacaAccount, AlpacaBarsResponse, AlpacaLatestTrade, AlpacaOrderResponse, AlpacaPosition, AlpacaWSMessage } from "./alpaca.types.js";
 import { config } from "../config.js";
 
 export class AlpacaBroker implements IBroker {
@@ -289,52 +290,3 @@ function toAlpacaTimeframe(minutes: number): string {
   return `${minutes}Min`;
 }
 
-// ─── Alpaca API types ─────────────────────────────────────────────────────────
-
-interface AlpacaAccount {
-  equity: string;
-  cash: string;
-  portfolio_value: string;
-}
-
-interface AlpacaBar {
-  t: string;
-  o: number;
-  h: number;
-  l: number;
-  c: number;
-  v: number;
-}
-
-interface AlpacaBarsResponse {
-  bars: AlpacaBar[];
-  symbol: string;
-  next_page_token: string | null;
-}
-
-interface AlpacaPosition {
-  symbol: string;
-  qty: string;
-  avg_entry_price: string;
-  current_price: string;
-  unrealized_pl: string;
-  unrealized_plpc: string;
-}
-
-interface AlpacaLatestTrade {
-  trade: { p: number; t: string };
-}
-
-interface AlpacaOrderResponse {
-  id: string;
-  status: string;
-  filled_avg_price: string | null;
-}
-
-interface AlpacaWSMessage {
-  T: string;
-  msg?: string;
-  S?: string;
-  p?: number;
-  t?: string;
-}
