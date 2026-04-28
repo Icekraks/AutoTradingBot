@@ -6,7 +6,7 @@
 import axios, { type AxiosInstance } from "axios";
 import WebSocket from "ws";
 import type { Asset, Candle, Order, Portfolio } from "@trading-bot/shared";
-import { OrderStatus, OrderType } from "@trading-bot/shared";
+import { OrderSide, OrderStatus, OrderType } from "@trading-bot/shared";
 import type { IBroker, PlaceOrderParams } from "./broker.interface.js";
 import { config } from "../config.js";
 
@@ -162,7 +162,6 @@ export class SwyftxBroker implements IBroker {
 
     // Swyftx convention: primary = quote currency (USD), secondary = traded asset (BTC).
     // quantity is always denominated in the secondary (base) asset.
-    // orderType encodes direction — "INSTANT_BUY" / "INSTANT_SELL" for market orders.
     const [res, fillPrice] = await Promise.all([
       this.http.post<SwyftxOrderResponse>(
         "/orders/",
@@ -171,7 +170,8 @@ export class SwyftxBroker implements IBroker {
           secondary: params.asset,            // e.g. "BTC"
           quantity: String(params.quantity),  // base asset amount, as string
           assetQuantity: params.asset,        // quantity is in secondary (base asset)
-          orderType: isBuy ? "INSTANT_BUY" : "INSTANT_SELL",
+          // Swyftx API uses numeric codes: 1 = instant buy, 2 = instant sell
+          orderType: isBuy ? 1 : 2,
           ...(params.limitPrice && { trigger: String(params.limitPrice) }),
         },
         { headers: { "Content-Type": "application/json" } }
@@ -181,8 +181,10 @@ export class SwyftxBroker implements IBroker {
 
     order.id = res.data.orderUuid;
     order.price = params.limitPrice ?? fillPrice;
-    order.status = OrderStatus.Filled;
-    order.filledAt = Date.now();
+    // processed=false means order is queued but not yet settled; treat as Filled for tracking
+    // (Swyftx instant orders settle near-immediately, but the flag can be false on creation)
+    order.status = res.data.processed ? OrderStatus.Filled : OrderStatus.Pending;
+    order.filledAt = res.data.processed ? Date.now() : undefined;
     return order;
   }
 
@@ -290,6 +292,11 @@ interface KrakenOHLCResponse {
 }
 
 // ─── Swyftx API response shapes ──────────────────────────────────────────────
+
+interface SwyftxOrderResponse {
+  orderUuid: string;
+  processed: boolean;
+}
 
 interface SwyftxTickerResponse {
   lastPrice: string;

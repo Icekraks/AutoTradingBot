@@ -370,7 +370,7 @@ export class TradingEngine {
       slowRegime,
     });
 
-    console.log(`[Engine] ${asset} signal=${signal.type} regime=${regime.regime} rsi=${signal.rsi.toFixed(1)}`);
+    console.log(`[Engine] ${asset} signal=${signal.type} fast=${regime.regime}(${(regime.confidence * 100).toFixed(0)}%) slow=${slowRegime.regime}(${(slowRegime.confidence * 100).toFixed(0)}%) rsi=${signal.rsi.toFixed(1)}`);
 
     // RSI exit cooldown: after an RSI overbought exit, suppress re-entry until RSI pulls back
     if (this.rsiExitCooldown.has(asset)) {
