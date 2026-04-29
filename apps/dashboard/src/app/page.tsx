@@ -72,6 +72,7 @@ export default function Page() {
             asset={selectedAsset}
             candles={state.candles?.[selectedAsset] ?? []}
             regimes={state.regimeSequences?.[selectedAsset] ?? []}
+            shiftToCloseTime={brokerAssets["Stocks"]?.includes(selectedAsset) ?? false}
           />
           <RegimePanel
             asset={selectedAsset}

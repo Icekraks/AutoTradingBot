@@ -24,6 +24,7 @@ interface PriceChartProps {
   asset: Asset;
   candles: Candle[];
   regimes: MarketRegime[];
+  shiftToCloseTime?: boolean;
 }
 
 const TZ = "Australia/Sydney";
@@ -58,7 +59,7 @@ function tickFormatter(time: Time): string {
   return "";
 }
 
-export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
+export function PriceChart({ asset, candles, regimes, shiftToCloseTime = false }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -126,8 +127,11 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return;
 
+    // Alpaca timestamps are candle-open time; shift to close time to match TradingView labels
+    const intervalMs = candles.length >= 2 ? candles[1].timestamp - candles[0].timestamp : 15 * 60 * 1000;
+    const shift = shiftToCloseTime ? intervalMs : 0;
     const data: CandlestickData[] = candles.map((c, i) => ({
-      time: Math.floor(c.timestamp / 1000) as unknown as CandlestickData["time"],
+      time: Math.floor((c.timestamp + shift) / 1000) as unknown as CandlestickData["time"],
       open: c.open,
       high: c.high,
       low: c.low,
@@ -150,12 +154,13 @@ export function PriceChart({ asset, candles, regimes }: PriceChartProps) {
       const prev = aestParts(Math.floor(candles[i - 1].timestamp / 1000));
       const curr = aestParts(Math.floor(candles[i].timestamp / 1000));
       if (prev.date !== curr.date || prev.month !== curr.month) {
+        const markerTime = Math.floor((candles[i].timestamp + shift) / 1000);
         markers.push({
-          time: Math.floor(candles[i].timestamp / 1000) as Time,
+          time: markerTime as Time,
           position: "belowBar",
           color: "#475569",
           shape: "arrowUp",
-          text: fmtDate(Math.floor(candles[i].timestamp / 1000)),
+          text: fmtDate(markerTime),
           size: 0,
         });
       }
