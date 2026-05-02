@@ -75,12 +75,12 @@ export class RiskManager {
       return { approved: false, reason: `Min hold period not met for ${signal.asset} (${heldMins}m < ${minMins}m)` };
     }
 
-    // ── Guardrail 5: position sizing ─────────────────────────────────────
+    // ── Guardrail 5: position sizing (buy only) ──────────────────────────
     const paperPortfolio = this.paperPortfolioRef?.();
     const maxPosition = ((paperPortfolio?.totalValue ?? portfolio.totalValue) * config.risk.maxPositionSizePct) / 100;
     const available = Math.min(paperPortfolio?.cash ?? portfolio.cash, maxPosition);
 
-    if (available < 10) {
+    if (signal.type === SignalType.Buy && available < 10) {
       return { approved: false, reason: "Insufficient balance for minimum position" };
     }
 
@@ -97,7 +97,9 @@ export class RiskManager {
       }
     }
 
-    const quantity = available / signal.price;
+    const quantity = signal.type === SignalType.Sell && alreadyLong
+      ? alreadyLong.quantity
+      : available / signal.price;
 
     return {
       approved: true,
@@ -155,6 +157,22 @@ export class RiskManager {
     if (drawdownPct >= config.risk.maxDrawdownPct) {
       this.halt(`Max drawdown reached post-exit (${drawdownPct.toFixed(2)}%)`);
     }
+  }
+
+  serialise() {
+    return {
+      dailyStartValue: this.dailyStartValue,
+      dailyResetAt: this.dailyResetAt,
+      halted: this.halted,
+      haltReason: this.haltReason,
+    };
+  }
+
+  restore(state: ReturnType<RiskManager["serialise"]>): void {
+    this.dailyStartValue = state.dailyStartValue;
+    this.dailyResetAt = state.dailyResetAt;
+    this.halted = state.halted;
+    this.haltReason = state.haltReason;
   }
 
   private halt(reason: string): void {

@@ -200,6 +200,8 @@ export class AlpacaBroker implements IBroker {
     let ws: WebSocket | null = null;
     let closed = false;
 
+    let retryDelay = 5000;
+
     const connect = () => {
       if (closed) return;
       // Paper accounts only have access to IEX; live accounts with SIP subscription use SIP.
@@ -207,6 +209,7 @@ export class AlpacaBroker implements IBroker {
       ws = new WebSocket(`wss://stream.data.alpaca.markets/v2/${feed}`);
 
       ws.on("open", () => {
+        retryDelay = 5000; // reset backoff on successful connection
         ws!.send(JSON.stringify({
           action: "auth",
           key: config.alpaca.apiKey,
@@ -229,10 +232,14 @@ export class AlpacaBroker implements IBroker {
 
       ws.on("error", (err) => {
         console.warn(`[Alpaca] Tick WS error for ${asset}: ${err.message}`);
+        ws?.terminate(); // force close so the close handler fires and we reconnect
       });
 
       ws.on("close", () => {
-        if (!closed) setTimeout(connect, 5000);
+        if (!closed) {
+          setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 60_000); // exponential backoff, cap at 60s
+        }
       });
     };
 

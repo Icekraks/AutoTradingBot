@@ -68,9 +68,10 @@ function BrokerRiskSection({ broker }: { broker: BrokerRiskMetrics }) {
         <Gauge
           label="Daily P&L"
           value={formatPct(metrics.dailyPnlPct)}
-          usedPct={Math.min(Math.abs(metrics.dailyPnlPct) / metrics.dailyLossLimitPct, 1)}
+          usedPct={metrics.dailyPnlPct < 0 ? Math.min(Math.abs(metrics.dailyPnlPct) / metrics.dailyLossLimitPct, 1) : 0}
           limitLabel={`Limit: ${metrics.dailyLossLimitPct}%`}
           danger={metrics.dailyPnlPct < 0}
+          positive={metrics.dailyPnlPct > 0}
         />
         <Gauge
           label="Drawdown"
@@ -85,7 +86,7 @@ function BrokerRiskSection({ broker }: { broker: BrokerRiskMetrics }) {
 }
 
 function SingleRiskSection({ metrics }: { metrics: RiskMetrics }) {
-  const dailyUsedPct = Math.min(Math.abs(metrics.dailyPnlPct) / metrics.dailyLossLimitPct, 1);
+  const dailyUsedPct = metrics.dailyPnlPct < 0 ? Math.min(Math.abs(metrics.dailyPnlPct) / metrics.dailyLossLimitPct, 1) : 0;
   const drawdownUsedPct = Math.min(metrics.drawdownFromPeakPct / metrics.maxDrawdownPct, 1);
   return (
     <>
@@ -101,6 +102,7 @@ function SingleRiskSection({ metrics }: { metrics: RiskMetrics }) {
           usedPct={dailyUsedPct}
           limitLabel={`Limit: ${metrics.dailyLossLimitPct}%`}
           danger={metrics.dailyPnlPct < 0}
+          positive={metrics.dailyPnlPct > 0}
         />
         <Gauge
           label="Drawdown"
@@ -120,15 +122,20 @@ function Gauge({
   usedPct,
   limitLabel,
   danger,
+  positive = false,
 }: {
   label: string;
   value: string;
   usedPct: number;
   limitLabel: string;
   danger: boolean;
+  positive?: boolean;
 }) {
-  const indicatorClassName =
-    usedPct > 0.9 ? "bg-red-500" : usedPct > 0.6 ? "bg-yellow-500" : "bg-blue-500";
+  const indicatorClassName = positive
+    ? "bg-green-500"
+    : usedPct > 0.9 ? "bg-red-500"
+    : usedPct > 0.6 ? "bg-yellow-500"
+    : "bg-blue-500";
 
   return (
     <div>

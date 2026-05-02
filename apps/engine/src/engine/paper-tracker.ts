@@ -55,9 +55,10 @@ export class PaperTracker {
     const pos = this.positions.get(order.asset);
     if (!pos) return;
 
-    const proceeds = order.quantity * price;
+    const qty = pos.quantity; // always close the exact position size
+    const proceeds = qty * price;
     const fee = proceeds * (this.feeRatePct / 100);
-    const cost = order.quantity * pos.entryPrice;
+    const cost = qty * pos.entryPrice;
     this.realisedPnl += proceeds - fee - cost;
     this.cash += proceeds - fee;
     this.positions.delete(order.asset);

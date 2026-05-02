@@ -549,6 +549,10 @@ export class TradingEngine {
           this.assets.map((a) => [a, this.slowDetectors.get(a)!.serialise()])
         ),
         rsiExitCooldown: Array.from(this.rsiExitCooldown),
+        cryptoRiskManager: this.cryptoRiskManager.serialise(),
+        stocksRiskManager: this.stocksRiskManager?.serialise() ?? null,
+        cryptoPeak: this.cryptoPeak,
+        stocksPeak: this.stocksPeak,
       };
       writeFileSync(TMP_STATE_PATH, JSON.stringify(state), "utf-8");
       renameSync(TMP_STATE_PATH, STATE_PATH);
@@ -567,6 +571,10 @@ export class TradingEngine {
       this.rsiExitCooldown = new Set(state.rsiExitCooldown ?? []);
       this.cryptoPaperTracker.restore(state.cryptoPaperTracker);
       this.stocksPaperTracker.restore(state.stocksPaperTracker);
+      if (state.cryptoRiskManager) this.cryptoRiskManager.restore(state.cryptoRiskManager);
+      if (state.stocksRiskManager && this.stocksRiskManager) this.stocksRiskManager.restore(state.stocksRiskManager);
+      if (state.cryptoPeak) this.cryptoPeak = Math.max(this.cryptoPeak, state.cryptoPeak);
+      if (state.stocksPeak) this.stocksPeak = Math.max(this.stocksPeak, state.stocksPeak);
 
       for (const asset of this.assets) {
         if (state.detectors?.[asset]) this.detectors.get(asset)!.restore(state.detectors[asset]);
