@@ -32,8 +32,10 @@ export class PaperTracker {
 
     this.cash -= cost + fee;
 
-    const stopLoss = price * (1 - config.risk.stopLossPct / 100);
-    const takeProfit = price * (1 + config.risk.takeProfitPct / 100);
+    const slPct = this.brokerName === "Crypto" ? config.risk.stopLossPctCrypto : config.risk.stopLossPct;
+    const tpPct = this.brokerName === "Crypto" ? config.risk.takeProfitPctCrypto : config.risk.takeProfitPct;
+    const stopLoss = price * (1 - slPct / 100);
+    const takeProfit = price * (1 + tpPct / 100);
 
     this.positions.set(order.asset, {
       asset: order.asset,

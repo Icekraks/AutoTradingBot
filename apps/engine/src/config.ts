@@ -59,6 +59,8 @@ export const config = {
     maxPositionSizePct: Number(getEnv("MAX_POSITION_SIZE_PCT", "10")),
     stopLossPct: Number(getEnv("STOP_LOSS_PCT", "2")),
     takeProfitPct: Number(getEnv("TAKE_PROFIT_PCT", "4")),
+    stopLossPctCrypto: Number(getEnv("STOP_LOSS_PCT_CRYPTO", getEnv("STOP_LOSS_PCT", "2"))),
+    takeProfitPctCrypto: Number(getEnv("TAKE_PROFIT_PCT_CRYPTO", getEnv("TAKE_PROFIT_PCT", "4"))),
     minHoldCandles: Number(getEnv("MIN_HOLD_CANDLES", "3")),
     trailingBreakevenPct: Number(getEnv("TRAILING_BREAKEVEN_PCT", "1")),
     trailingStopPct: Number(getEnv("TRAILING_STOP_PCT", "1.5")),
