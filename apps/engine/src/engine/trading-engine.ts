@@ -2,7 +2,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Asset, Candle, Order, PaperPortfolio, Portfolio, RegimeState } from "@trading-bot/shared";
 import { MarketRegime, OrderSide, OrderStatus, OrderType, SignalType } from "@trading-bot/shared";
-import type { IBroker } from "../brokers/broker.interface.js";
+import type { IBroker, PlaceOrderParams } from "../brokers/broker.interface.js";
 import { RegimeDetector } from "../hmm/regime.js";
 import { generateSignal } from "../signals/signal-generator.js";
 import { RiskManager } from "../guardrails/risk-manager.js";
@@ -289,6 +289,11 @@ export class TradingEngine {
     this.updatePeaks();
     this.emitPortfolio();
 
+    // End-of-week close: exit all stock positions before Friday market close
+    if (this.alpacaAssets.size > 0 && this.isFridayMarketClose()) {
+      await this.eowCloseStockPositions();
+    }
+
     // Hourly market summary (every 4 ticks on 15m candles)
     this.tickCount++;
     if (this.claude.enabled && this.tickCount % 4 === 0) {
@@ -329,6 +334,53 @@ export class TradingEngine {
     const minute = Number(parts.find((p) => p.type === "minute")?.value);
     const minuteOfDay = hour * 60 + minute;
     return minuteOfDay >= 240 && minuteOfDay < 1200; // 04:00–20:00 ET (extended hours)
+  }
+
+  private isFridayMarketClose(): boolean {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    if (parts.find((p) => p.type === "weekday")?.value !== "Fri") return false;
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    const minuteOfDay = hour * 60 + minute;
+    return minuteOfDay >= 945 && minuteOfDay < 975; // 3:45–4:15pm ET
+  }
+
+  private async eowCloseStockPositions(): Promise<void> {
+    const positions = this.stocksPaperTracker.getPortfolio().positions;
+    if (positions.length === 0) return;
+    console.log(`[Engine] Friday close — exiting ${positions.length} stock position(s)`);
+
+    for (const pos of positions) {
+      const buf = this.candleBuffers.get(pos.asset as Asset) ?? [];
+      const price = buf.at(-1)?.close ?? 0;
+      const params: PlaceOrderParams = {
+        asset: pos.asset as Asset,
+        quoteAsset: this.quoteAsset,
+        side: OrderSide.Sell,
+        type: OrderType.Market,
+        quantity: pos.quantity,
+      };
+      try {
+        const order = await this.broker.placeOrder(params);
+        if (order.status === OrderStatus.Filled) {
+          this.recentTrades.unshift(order);
+          if (this.recentTrades.length > 50) this.recentTrades.pop();
+          if (order.paperId) this.stocksPaperTracker.onOrderFilled(order, price || order.price);
+          this.emit({ type: "order", order });
+          console.log(`[Engine] ${pos.asset} EOW close @ ${price || order.price}`);
+        }
+      } catch (err) {
+        console.error(`[Engine] EOW close failed for ${pos.asset}:`, (err as Error).message);
+      }
+    }
+    this.emitPortfolio();
   }
 
   // Returns true during the opening volatility window after each session open.
